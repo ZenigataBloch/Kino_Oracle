@@ -188,10 +188,10 @@ class BoardState extends ChangeNotifier {
   /// vertical = true (telefoni): i livelli scendono dall'alto (A) al basso (B) e i nodi dello
   /// stesso livello sono affiancati, con piu spazio perche le etichette non si sovrappongano.
   MapLayout layout({bool vertical = false}) {
-    final colGap = vertical ? 260.0 : 290.0; // distanza tra livelli
-    final rowGap = vertical ? 210.0 : 110.0; // distanza tra nodi dello stesso livello
-    final padLvl = vertical ? 130.0 : 150.0; // margine lungo i livelli
-    final padSide = vertical ? 110.0 : 90.0; // margine sull'altro asse
+    final colGap = vertical ? 280.0 : 300.0; // distanza tra livelli
+    const rowGap = 200.0; // distanza tra nodi dello stesso livello
+    final padLvl = vertical ? 140.0 : 150.0; // margine lungo i livelli
+    final padSide = vertical ? 110.0 : 130.0; // margine sull'altro asse
     final g = _adj;
     final dA = _bfs('p${a.id}'), dB = _bfs('p${b.id}');
     final joined = dA.containsKey('p${b.id}');

@@ -7,6 +7,7 @@ import '../game/recap.dart';
 import '../main.dart';
 import '../models/models.dart';
 import '../theme/kino_theme.dart';
+import 'map_nodes.dart';
 import 'metro_painter.dart';
 import 'win_overlay.dart';
 
@@ -15,6 +16,7 @@ class Suggestion {
   final Movie? movie;
   const Suggestion.person(Person p) : person = p, movie = null;
   const Suggestion.movie(Movie m) : movie = m, person = null;
+  String? get imageUrl => person?.photoUrl ?? movie?.posterUrl;
   String get label => person?.name ?? '${movie!.title}${movie!.year == null ? '' : ' (${movie!.year})'}';
 }
 
@@ -148,7 +150,7 @@ class _BoardScreenState extends State<BoardScreen> {
         appBar: AppBar(
           backgroundColor: spec.bg,
           title: Text('${s.a.name}  ⇄  ${s.b.name}',
-              maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 16)),
+              maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 18)),
           actions: [
             Padding(
               padding: const EdgeInsets.only(right: 12),
@@ -184,7 +186,7 @@ class _BoardScreenState extends State<BoardScreen> {
                 child: Row(children: [
                   Icon(Icons.info_outline, size: 18, color: spec.accent),
                   const SizedBox(width: 8),
-                  Expanded(child: Text(s.message!, style: TextStyle(color: spec.accent))),
+                  Expanded(child: Text(s.message!, style: TextStyle(color: spec.accent, fontSize: 15, fontWeight: FontWeight.w600))),
                 ]),
               ),
             SafeArea(child: Padding(padding: const EdgeInsets.all(8), child: _inputRow())),
@@ -214,6 +216,10 @@ class _BoardScreenState extends State<BoardScreen> {
         WidgetsBinding.instance.addPostFrameCallback((_) => _fit());
       }
       final lay = s.layout(vertical: vertical);
+      final deg = <int, int>{}; // film per attore: 2+ = scambio
+      for (final (p, _) in s.links) {
+        deg[p] = (deg[p] ?? 0) + 1;
+      }
       final fresh = s.movies.isEmpty; // solo i due attori di partenza sul tavolo
       return Stack(children: [
         Positioned.fill(
@@ -223,9 +229,14 @@ class _BoardScreenState extends State<BoardScreen> {
             minScale: 0.2,
             maxScale: 3,
             boundaryMargin: EdgeInsets.all(vertical ? 200 : 600),
-            child: CustomPaint(
-              size: lay.size,
-              painter: MetroPainter(s, spec, lay, vertical: vertical),
+            child: SizedBox(
+              width: lay.size.width,
+              height: lay.size.height,
+              child: Stack(clipBehavior: Clip.none, children: [
+                Positioned.fill(child: CustomPaint(painter: MetroPainter(s, spec, lay, vertical: vertical))),
+                for (final m in s.movies.values) _movieAt(m, lay, spec),
+                for (final p in s.people.values) _personAt(p, lay, spec, deg[p.id] ?? 0),
+              ]),
             ),
           ),
         ),
@@ -255,12 +266,38 @@ class _BoardScreenState extends State<BoardScreen> {
                   'Parti da un film in cui ha recitato ${s.a.name} o ${s.b.name}, '
                   'poi continua finché i due gruppi si incontrano.',
                   textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 15),
                 ),
               ),
             ),
           ),
       ]);
     });
+  }
+
+  Widget _personAt(Person p, MapLayout lay, StyleSpec spec, int films) {
+    final node = PersonNode(
+      person: p,
+      spec: spec,
+      isA: p.id == s.a.id,
+      isB: p.id == s.b.id,
+      hub: films >= 2,
+      onTap: () => showNodeDetail(context, title: p.name, imageUrl: p.photoUrl, round: true, spec: spec),
+    );
+    final o = lay.pos['p${p.id}']!;
+    return Positioned(left: o.dx - PersonNode.width / 2, top: o.dy - node.size / 2, width: PersonNode.width, child: node);
+  }
+
+  Widget _movieAt(Movie m, MapLayout lay, StyleSpec spec) {
+    final node = MovieNode(
+      movie: m,
+      spec: spec,
+      color: MetroPainter.lineColor(spec, m.id),
+      onTap: () => showNodeDetail(
+          context, title: m.title, subtitle: m.year, imageUrl: m.posterUrl, round: false, spec: spec),
+    );
+    final o = lay.pos['m${m.id}']!;
+    return Positioned(left: o.dx - MovieNode.width / 2, top: o.dy - MovieNode.posterH / 2, width: MovieNode.width, child: node);
   }
 
   Widget _inputRow() {
@@ -293,16 +330,26 @@ class _BoardScreenState extends State<BoardScreen> {
               borderRadius: BorderRadius.circular(12),
               clipBehavior: Clip.antiAlias,
               child: ConstrainedBox(
-                constraints: const BoxConstraints(maxHeight: 320, maxWidth: 460),
+                constraints: const BoxConstraints(maxHeight: 360, maxWidth: 460),
                 child: ListView(
                   shrinkWrap: true,
                   padding: EdgeInsets.zero,
                   children: [
                     for (final o in options)
                       ListTile(
-                        dense: true,
-                        leading: Icon(o.person != null ? Icons.person : Icons.movie),
-                        title: Text(o.label),
+                        leading: SizedBox(
+                          width: 40,
+                          height: o.person != null ? 40 : 56,
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(o.person != null ? 20 : 6),
+                            child: NodeImage(
+                              url: o.imageUrl,
+                              fallback: o.person != null ? Icons.person : Icons.movie,
+                              color: settings.spec.ink,
+                            ),
+                          ),
+                        ),
+                        title: Text(o.label, style: const TextStyle(fontSize: 16)),
                         onTap: () => onSelected(o),
                       ),
                   ],

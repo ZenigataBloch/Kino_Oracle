@@ -10,5 +10,6 @@ class Movie {
   final int id;
   final String title;
   final String? year;
-  const Movie(this.id, this.title, this.year);
+  final String? posterUrl; // URL completo del poster
+  const Movie(this.id, this.title, this.year, [this.posterUrl]);
 }

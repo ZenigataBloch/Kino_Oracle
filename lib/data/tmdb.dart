@@ -60,7 +60,8 @@ class Tmdb implements DataSource {
     return [
       for (final m in j['results'] as List)
         Movie(m['id'], m['title'],
-            ((m['release_date'] ?? '') as String).length >= 4 ? (m['release_date'] as String).substring(0, 4) : null)
+            ((m['release_date'] ?? '') as String).length >= 4 ? (m['release_date'] as String).substring(0, 4) : null,
+            m['poster_path'] == null ? null : 'https://image.tmdb.org/t/p/w342${m['poster_path']}')
     ];
   }
 
