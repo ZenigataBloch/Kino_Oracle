@@ -1,4 +1,3 @@
-import 'dart:math';
 import 'package:flutter/material.dart';
 import '../data/data_source.dart';
 import '../game/board_state.dart';
@@ -7,10 +6,6 @@ import '../models/models.dart';
 import 'board_screen.dart';
 import 'history_screen.dart';
 import 'settings_screen.dart';
-
-const _famous = ['Tom Hanks', 'Meryl Streep', 'Denzel Washington', 'Al Pacino', 'Scarlett Johansson',
-  'Brad Pitt', 'Cate Blanchett', 'Robert De Niro', 'Julia Roberts', 'Leonardo DiCaprio',
-  'Sophia Loren', 'Marcello Mastroianni', 'Toni Servillo', 'Monica Bellucci', 'Kevin Bacon'];
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -43,11 +38,11 @@ class _HomeScreenState extends State<HomeScreen> {
     final other = picks[1 - i];
     try {
       for (var k = 0; k < 4; k++) {
-        final r = await data.searchPeople(_famous[Random().nextInt(_famous.length)]);
-        if (r.isEmpty || r.first.id == other?.id) continue;
+        final p = await data.randomPerson();
+        if (p == null || p.id == other?.id) continue;
         if (!mounted) return;
         setState(() {
-          picks[i] = r.first;
+          picks[i] = p;
           _keys[i] = UniqueKey();
         });
         return;

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math';
 import 'package:http/http.dart' as http;
 import '../models/models.dart';
 import 'data_source.dart';
@@ -35,6 +36,21 @@ class Tmdb implements DataSource {
           Person(p['id'], p['name'],
               p['profile_path'] == null ? null : 'https://image.tmdb.org/t/p/w342${p['profile_path']}', null)
     ];
+  }
+
+  /// Un attore a caso tra i più popolari (25 pagine da 20 = circa 500 persone).
+  @override
+  Future<Person?> randomPerson() async {
+    final rnd = Random();
+    final j = await _get('/person/popular', {'page': '${1 + rnd.nextInt(25)}'});
+    final actors = [
+      for (final p in j['results'] as List)
+        if (p['known_for_department'] == 'Acting') p
+    ];
+    if (actors.isEmpty) return null;
+    final p = actors[rnd.nextInt(actors.length)];
+    return Person(p['id'], p['name'],
+        p['profile_path'] == null ? null : 'https://image.tmdb.org/t/p/w342${p['profile_path']}', null);
   }
 
   @override

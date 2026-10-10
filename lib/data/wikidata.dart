@@ -85,6 +85,16 @@ class Wikidata implements DataSource {
   }
 
   @override
+  Future<Person?> randomPerson() async {
+    final names = [...famousActors]..shuffle();
+    for (final n in names.take(4)) {
+      final r = await searchPeople(n);
+      if (r.isNotEmpty) return r.first;
+    }
+    return null;
+  }
+
+  @override
   Future<List<Movie>> searchMovies(String q) async {
     final ids = await _search(q);
     final ents = await _entities(ids);
