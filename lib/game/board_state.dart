@@ -184,8 +184,14 @@ class BoardState extends ChangeNotifier {
 
   /// Colonne per distanza: il gruppo di A cresce da sinistra, quello di B da destra,
   /// finche non si incontrano. Le righe sono ordinate col baricentro dei vicini.
-  MapLayout layout() {
-    const colGap = 290.0, rowGap = 110.0, padX = 150.0, padY = 90.0;
+  ///
+  /// vertical = true (telefoni): i livelli scendono dall'alto (A) al basso (B) e i nodi dello
+  /// stesso livello sono affiancati, con piu spazio perche le etichette non si sovrappongano.
+  MapLayout layout({bool vertical = false}) {
+    final colGap = vertical ? 260.0 : 290.0; // distanza tra livelli
+    final rowGap = vertical ? 210.0 : 110.0; // distanza tra nodi dello stesso livello
+    final padLvl = vertical ? 130.0 : 150.0; // margine lungo i livelli
+    final padSide = vertical ? 110.0 : 90.0; // margine sull'altro asse
     final g = _adj;
     final dA = _bfs('p${a.id}'), dB = _bfs('p${b.id}');
     final joined = dA.containsKey('p${b.id}');
@@ -215,9 +221,14 @@ class BoardState extends ChangeNotifier {
       }
       maxRows = max(maxRows, nodes.length);
     }
-    final midY = padY + (maxRows - 1) / 2 * rowGap;
-    final pos = {for (final n in all) n: Offset(padX + col[n]! * colGap, midY + row[n]! * rowGap)};
+    final mid = padSide + (maxRows - 1) / 2 * rowGap;
+    Offset at(String n) {
+      final lvl = padLvl + col[n]! * colGap, side = mid + row[n]! * rowGap;
+      return vertical ? Offset(side, lvl) : Offset(lvl, side);
+    }
+    final pos = {for (final n in all) n: at(n)};
     final lastCol = cols.isEmpty ? 0 : cols.last;
-    return MapLayout(pos, Size(2 * padX + lastCol * colGap, 2 * padY + (maxRows - 1) * rowGap));
+    final lvlSize = 2 * padLvl + lastCol * colGap, sideSize = 2 * padSide + (maxRows - 1) * rowGap;
+    return MapLayout(pos, vertical ? Size(sideSize, lvlSize) : Size(lvlSize, sideSize));
   }
 }

@@ -30,6 +30,7 @@ class _BoardScreenState extends State<BoardScreen> {
   bool _hasOptions = false;
   final _tc = TransformationController();
   Size _view = Size.zero;
+  bool _vertical = false; // telefono: mappa verticale
   int _count = 0;
   bool _showWin = false; // riepilogo di vittoria visibile
   bool _winSeen = false; // la vittoria e gia stata festeggiata
@@ -88,9 +89,18 @@ class _BoardScreenState extends State<BoardScreen> {
   /// Adatta la mappa allo spazio disponibile.
   void _fit() {
     if (!mounted || _view.isEmpty) return;
-    final sz = s.layout().size;
-    final sc = min(1.0, min(_view.width / sz.width, _view.height / sz.height));
-    final tx = (_view.width - sz.width * sc) / 2, ty = (_view.height - sz.height * sc) / 2;
+    final sz = s.layout(vertical: _vertical).size;
+    double sc, tx, ty;
+    if (_vertical) {
+      // Telefono: adatta in larghezza, ma non sotto 0.75 (leggibilita); in altezza si scorre.
+      sc = max(0.75, min(1.0, _view.width / sz.width));
+      tx = sz.width * sc <= _view.width ? (_view.width - sz.width * sc) / 2 : 8;
+      ty = sz.height * sc <= _view.height ? (_view.height - sz.height * sc) / 2 : 8;
+    } else {
+      sc = min(1.0, min(_view.width / sz.width, _view.height / sz.height));
+      tx = (_view.width - sz.width * sc) / 2;
+      ty = (_view.height - sz.height * sc) / 2;
+    }
     _tc.value = Matrix4(sc, 0, 0, 0, 0, sc, 0, 0, 0, 0, 1, 0, tx, ty, 0, 1);
   }
 
@@ -197,11 +207,13 @@ class _BoardScreenState extends State<BoardScreen> {
   Widget _map(StyleSpec spec) {
     return LayoutBuilder(builder: (_, box) {
       final size = Size(box.maxWidth, box.maxHeight);
-      if (size != _view) {
+      final vertical = box.maxWidth < 600; // telefoni: catena dall'alto verso il basso
+      if (size != _view || vertical != _vertical) {
         _view = size;
+        _vertical = vertical;
         WidgetsBinding.instance.addPostFrameCallback((_) => _fit());
       }
-      final lay = s.layout();
+      final lay = s.layout(vertical: vertical);
       final fresh = s.movies.isEmpty; // solo i due attori di partenza sul tavolo
       return Stack(children: [
         Positioned.fill(
@@ -210,8 +222,11 @@ class _BoardScreenState extends State<BoardScreen> {
             constrained: false,
             minScale: 0.2,
             maxScale: 3,
-            boundaryMargin: const EdgeInsets.all(600),
-            child: CustomPaint(size: lay.size, painter: MetroPainter(s, spec, lay)),
+            boundaryMargin: EdgeInsets.all(vertical ? 200 : 600),
+            child: CustomPaint(
+              size: lay.size,
+              painter: MetroPainter(s, spec, lay, vertical: vertical),
+            ),
           ),
         ),
         Positioned(
