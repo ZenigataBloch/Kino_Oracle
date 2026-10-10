@@ -220,7 +220,6 @@ class _BoardScreenState extends State<BoardScreen> {
       for (final (p, _) in s.links) {
         deg[p] = (deg[p] ?? 0) + 1;
       }
-      final fresh = s.movies.isEmpty; // solo i due attori di partenza sul tavolo
       return Stack(children: [
         Positioned.fill(
           child: InteractiveViewer(
@@ -249,28 +248,6 @@ class _BoardScreenState extends State<BoardScreen> {
             icon: const Icon(Icons.fit_screen),
           ),
         ),
-        if (fresh)
-          Positioned(
-            left: 16,
-            right: 16,
-            bottom: 12,
-            child: IgnorePointer(
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                decoration: BoxDecoration(
-                  color: spec.bg.withOpacity(.92),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: spec.ink.withOpacity(.25)),
-                ),
-                child: Text(
-                  'Parti da un film in cui ha recitato ${s.a.name} o ${s.b.name}, '
-                  'poi continua finché i due gruppi si incontrano.',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(fontSize: 15),
-                ),
-              ),
-            ),
-          ),
       ]);
     });
   }
