@@ -65,7 +65,7 @@ class Updater {
       .split('+')
       .first
       .split('.')
-      .map((e) => int.tryParse(e) ?? 0)
+      .map((e) => int.tryParse(RegExp(r'^\d+').firstMatch(e)?.group(0) ?? '') ?? 0) // '4b' -> 4
       .toList();
 
   static bool _newer(String a, String b) {
