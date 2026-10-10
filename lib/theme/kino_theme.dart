@@ -1,7 +1,6 @@
 import 'dart:ui' show PlatformDispatcher;
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../data/data_source.dart';
 
 enum KinoStyle { metro, investigation, cinema }
 
@@ -74,7 +73,14 @@ class AppSettings extends ChangeNotifier {
   Appearance appearance = Appearance.system;
   bool noSeries = false;
   String lang = 'it-IT';
-  SourceId source = hasTmdbKey ? SourceId.tmdb : SourceId.wikidata;
+
+  /// Chiave TMDB inserita nelle Impostazioni (salvata sul telefono).
+  String tmdbToken = '';
+  static const _buildKey = String.fromEnvironment('TMDB_TOKEN');
+
+  /// Chiave in uso: quella delle Impostazioni, altrimenti quella di --dart-define.
+  String get tmdbKey => tmdbToken.isNotEmpty ? tmdbToken : _buildKey;
+  bool get hasKey => tmdbKey.isNotEmpty;
 
   /// Palette effettiva: stile + aspetto (+ tema del sistema se "Sistema").
   StyleSpec get spec {
@@ -94,21 +100,21 @@ class AppSettings extends ChangeNotifier {
     appearance = Appearance.values.firstWhere((a) => a.name == p.getString('appearance'), orElse: () => Appearance.system);
     noSeries = p.getBool('noSeries') ?? false;
     lang = p.getString('lang') ?? 'it-IT';
-    source = SourceId.values.firstWhere((s) => s.name == p.getString('source'), orElse: () => source);
+    tmdbToken = p.getString('tmdbToken') ?? '';
   }
 
-  Future<void> update({KinoStyle? style, Appearance? appearance, bool? noSeries, String? lang, SourceId? source}) async {
+  Future<void> update({KinoStyle? style, Appearance? appearance, bool? noSeries, String? lang, String? tmdbToken}) async {
     this.style = style ?? this.style;
     this.appearance = appearance ?? this.appearance;
     this.noSeries = noSeries ?? this.noSeries;
     this.lang = lang ?? this.lang;
-    this.source = source ?? this.source;
+    this.tmdbToken = tmdbToken ?? this.tmdbToken;
     final p = await SharedPreferences.getInstance();
     await p.setString('style', this.style.name);
     await p.setString('appearance', this.appearance.name);
     await p.setBool('noSeries', this.noSeries);
     await p.setString('lang', this.lang);
-    await p.setString('source', this.source.name);
+    await p.setString('tmdbToken', this.tmdbToken);
     notifyListeners();
   }
 }

@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../main.dart';
-import '../data/data_source.dart';
 import '../theme/kino_theme.dart';
 
 class SettingsScreen extends StatelessWidget {
@@ -52,22 +51,69 @@ class SettingsScreen extends StatelessWidget {
               ),
             ),
             const Divider(),
-            const ListTile(title: Text('Fonte dati')),
-            RadioListTile<SourceId>(
-              value: SourceId.tmdb,
-              groupValue: settings.source,
-              title: const Text('TMDB'),
-              subtitle: Text(hasTmdbKey ? 'Cast e foto piu completi' : 'Avvia l\'app con TMDB_TOKEN per abilitarla'),
-              onChanged: hasTmdbKey ? (v) => settings.update(source: v) : null,
-            ),
-            RadioListTile<SourceId>(
-              value: SourceId.wikidata,
-              groupValue: settings.source,
-              title: const Text('Wikidata'),
-              subtitle: const Text('Libera, senza chiave'),
-              onChanged: (v) => settings.update(source: v),
+            const ListTile(title: Text('Chiave TMDB')),
+            const _TokenTile(),
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 8, 16, 24),
+              child: Text(
+                'This product uses the TMDB API but is not endorsed or certified by TMDB.',
+                style: TextStyle(fontSize: 12),
+              ),
             ),
           ]),
         ),
+      );
+}
+
+/// Campo per incollare la chiave TMDB: "Read Access Token" (v4, inizia con eyJ) o "API Key" (v3).
+class _TokenTile extends StatefulWidget {
+  const _TokenTile();
+  @override
+  State<_TokenTile> createState() => _TokenTileState();
+}
+
+class _TokenTileState extends State<_TokenTile> {
+  late final _ctl = TextEditingController(text: settings.tmdbToken);
+  bool _hide = true;
+
+  @override
+  void dispose() {
+    _ctl.dispose();
+    super.dispose();
+  }
+
+  void _save() {
+    FocusScope.of(context).unfocus();
+    settings.update(tmdbToken: _ctl.text.trim());
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(_ctl.text.trim().isEmpty ? 'Chiave rimossa' : 'Chiave salvata')),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          TextField(
+            controller: _ctl,
+            obscureText: _hide,
+            autocorrect: false,
+            enableSuggestions: false,
+            onSubmitted: (_) => _save(),
+            decoration: InputDecoration(
+              labelText: 'Read Access Token o API Key',
+              helperText: 'Gratis su themoviedb.org: Impostazioni > API',
+              helperMaxLines: 2,
+              border: const OutlineInputBorder(),
+              suffixIcon: IconButton(
+                tooltip: _hide ? 'Mostra' : 'Nascondi',
+                icon: Icon(_hide ? Icons.visibility : Icons.visibility_off),
+                onPressed: () => setState(() => _hide = !_hide),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Align(alignment: Alignment.centerRight, child: FilledButton(onPressed: _save, child: const Text('Salva'))),
+        ]),
       );
 }

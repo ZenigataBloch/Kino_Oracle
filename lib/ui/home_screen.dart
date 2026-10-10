@@ -3,6 +3,8 @@ import '../data/data_source.dart';
 import '../game/board_state.dart';
 import '../main.dart';
 import '../models/models.dart';
+import '../theme/kino_theme.dart';
+import '../update/updater.dart';
 import 'board_screen.dart';
 import 'history_screen.dart';
 import 'settings_screen.dart';
@@ -14,9 +16,18 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  DataSource data = makeSource(settings.source, settings.lang);
+  DataSource data = makeSource(settings.lang, settings.tmdbKey);
   final picks = <Person?>[null, null];
   final _keys = [UniqueKey(), UniqueKey()];
+
+  @override
+  void initState() {
+    super.initState();
+    // Su Android propone di scaricare l'APK se su GitHub c'e una versione piu nuova.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) Updater.check(context);
+    });
+  }
 
   /// Azzera i due attori scelti (e i relativi campi di testo).
   void _reset() => setState(() {
@@ -47,9 +58,12 @@ class _HomeScreenState extends State<HomeScreen> {
         });
         return;
       }
-    } catch (_) {
+    } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Errore di rete, riprova')));
+      final msg = e.toString().contains('401')
+          ? 'Chiave TMDB non valida: controllala nelle Impostazioni'
+          : 'Errore di rete, riprova';
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
     }
   }
 
@@ -64,11 +78,15 @@ class _HomeScreenState extends State<HomeScreen> {
     if ((done == true || game.solved) && mounted) _reset();
   }
 
+  // Si ricostruisce quando cambiano le impostazioni (anche la chiave TMDB).
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      ListenableBuilder(listenable: settings, builder: (_, __) => _page(context));
+
+  Widget _page(BuildContext context) {
     final spec = settings.spec;
-    data = makeSource(settings.source, settings.lang);
-    final ready = picks[0] != null && picks[1] != null && picks[0]!.id != picks[1]!.id;
+    data = makeSource(settings.lang, settings.tmdbKey);
+    final ready = settings.hasKey && picks[0] != null && picks[1] != null && picks[0]!.id != picks[1]!.id;
     return Scaffold(
       appBar: AppBar(
         backgroundColor: spec.bg,
@@ -97,6 +115,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ]),
             const SizedBox(height: 8),
             const Text('Scegli due attori e collegali attraverso i film'),
+            if (!settings.hasKey) _keyBanner(spec),
             const SizedBox(height: 32),
             Wrap(spacing: 24, runSpacing: 24, alignment: WrapAlignment.center, children: [
               for (var i = 0; i < 2; i++) _slot(i),
@@ -119,6 +138,26 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
+
+  /// Senza chiave TMDB non si puo giocare: rimanda alle Impostazioni.
+  Widget _keyBanner(StyleSpec spec) => Container(
+        constraints: const BoxConstraints(maxWidth: 420),
+        margin: const EdgeInsets.only(top: 20),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: spec.accent.withOpacity(.12),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: spec.accent.withOpacity(.4)),
+        ),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const Text('Per giocare serve una chiave TMDB (gratuita).', textAlign: TextAlign.center),
+          const SizedBox(height: 10),
+          FilledButton.tonal(
+            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SettingsScreen())),
+            child: const Text('Apri le impostazioni'),
+          ),
+        ]),
+      );
 
   Widget _slot(int i) {
     final p = picks[i];
@@ -166,7 +205,7 @@ class _HomeScreenState extends State<HomeScreen> {
           key: _keys[i],
           initialValue: TextEditingValue(text: p?.name ?? ''),
           displayStringForOption: (o) => o.name,
-          optionsBuilder: (v) async => v.text.length < 2 ? const <Person>[] : (await data.searchPeople(v.text)).take(6),
+          optionsBuilder: (v) async => !settings.hasKey || v.text.length < 2 ? const <Person>[] : (await data.searchPeople(v.text)).take(6),
           onSelected: (o) => setState(() => picks[i] = o),
           fieldViewBuilder: (_, ctl, focus, submit) => TextField(
             controller: ctl,
@@ -174,7 +213,7 @@ class _HomeScreenState extends State<HomeScreen> {
             decoration: InputDecoration(labelText: 'Attore ${i + 1}', border: const OutlineInputBorder()),
           ),
         ),
-        TextButton(onPressed: () => _random(i), child: const Text('Scegli per me')),
+        TextButton(onPressed: settings.hasKey ? () => _random(i) : null, child: const Text('Scegli per me')),
       ]),
     );
   }

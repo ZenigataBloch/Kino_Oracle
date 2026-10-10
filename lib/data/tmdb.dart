@@ -5,12 +5,12 @@ import '../models/models.dart';
 import 'data_source.dart';
 
 /// Client TMDB. Accetta sia il "Read Access Token" (v4, inizia con eyJ)
-/// sia la "API Key" (v3), passati con --dart-define=TMDB_TOKEN=...
+/// sia la "API Key" (v3). La chiave arriva dalle Impostazioni dell'app.
 class Tmdb implements DataSource {
-  static const _key = String.fromEnvironment('TMDB_TOKEN');
   static const _base = 'https://api.themoviedb.org/3';
   final String lang;
-  Tmdb(this.lang);
+  final String _key;
+  Tmdb(this.lang, this._key);
 
   final _movieCast = <int, Set<int>>{};
   final _personMovies = <int, Set<int>>{};
@@ -23,6 +23,7 @@ class Tmdb implements DataSource {
       ...q,
     });
     final r = await http.get(uri, headers: bearer ? {'Authorization': 'Bearer $_key'} : {});
+    if (r.statusCode == 401) throw Exception('Chiave TMDB non valida (401)');
     if (r.statusCode != 200) throw Exception('TMDB ${r.statusCode}');
     return jsonDecode(r.body) as Map<String, dynamic>;
   }
