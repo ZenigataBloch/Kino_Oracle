@@ -10,8 +10,31 @@ void main() async {
   runApp(const KinoApp());
 }
 
-class KinoApp extends StatelessWidget {
+class KinoApp extends StatefulWidget {
   const KinoApp({super.key});
+  @override
+  State<KinoApp> createState() => _KinoAppState();
+}
+
+class _KinoAppState extends State<KinoApp> with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  // Segue il tema del sistema quando l'aspetto e "Sistema".
+  @override
+  void didChangePlatformBrightness() {
+    if (settings.appearance == Appearance.system) setState(() {});
+  }
+
   @override
   Widget build(BuildContext context) => ListenableBuilder(
         listenable: settings,

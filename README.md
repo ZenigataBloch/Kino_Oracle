@@ -26,3 +26,22 @@ Su Android aggiungi in android/app/src/main/AndroidManifest.xml:
 - lib/data: DataSource (interfaccia), tmdb.dart, wikidata.dart
 - lib/game: stato del tavolo e validazione dei collegamenti
 - lib/ui: schermate e painter della mappa
+
+## Avvio da menu Start con aggiornamento automatico (Windows)
+```
+powershell -ExecutionPolicy Bypass -File tools\install-shortcut.ps1          # menu Start
+powershell -ExecutionPolicy Bypass -File tools\install-shortcut.ps1 -Desktop  # anche desktop
+powershell -ExecutionPolicy Bypass -File tools\install-shortcut.ps1 -Remove   # rimuove
+```
+Il collegamento avvia `tools/launch.ps1`: a ogni avvio controlla GitHub, e se ci sono nuovi commit
+fa `git pull`, ricompila (`flutter build windows --release`, con `env.json` se presente) e avvia l'app
+da `.run/`. Mentre l'app e aperta ricontrolla ogni 30 minuti e, se serve, aggiorna e la riavvia.
+Il log e in `tools/launcher.log`. Aggiungi a `.gitignore`: `.run/` e `tools/launcher.log`.
+
+## Icona
+Le immagini sono in `assets/icon/`. Per applicarle ad Android e Windows:
+```
+flutter pub get
+dart run flutter_launcher_icons
+```
+(sovrascrive `windows/runner/resources/app_icon.ico` e le icone `mipmap` di Android).

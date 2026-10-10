@@ -20,6 +20,20 @@ class SettingsScreen extends StatelessWidget {
                 onChanged: (v) => settings.update(style: v),
               ),
             const Divider(),
+            const ListTile(title: Text('Aspetto')),
+            for (final (a, label) in const [
+              (Appearance.system, 'Sistema'),
+              (Appearance.light, 'Chiaro'),
+              (Appearance.dark, 'Scuro'),
+              (Appearance.amoled, 'Scuro AMOLED (nero puro)'),
+            ])
+              RadioListTile<Appearance>(
+                value: a,
+                groupValue: settings.appearance,
+                title: Text(label),
+                onChanged: (v) => settings.update(appearance: v),
+              ),
+            const Divider(),
             SwitchListTile(
               title: const Text('Vieta film della stessa serie'),
               subtitle: const Text('Non ancora implementato'),
