@@ -30,7 +30,15 @@ class BoardState extends ChangeNotifier {
   bool optimalReady = false;
   bool _closed = false;
 
+  // Tempo di gioco: parte alla creazione, si ferma al collegamento.
+  final DateTime startedAt = DateTime.now();
+  DateTime? finishedAt;
+  Duration get elapsed => (finishedAt ?? DateTime.now()).difference(startedAt);
+
   int get moves => people.length + movies.length - 2;
+
+  /// Distanze (in archi del grafo) da un nodo, es. 'p123'. Usato per i suggerimenti.
+  Map<String, int> distancesFrom(String start) => _bfs(start);
 
   Future<void> _solve() async {
     final r = await Solver.shortest(data, a.id, b.id, () => _closed);
@@ -40,23 +48,39 @@ class BoardState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Stelle da 1 a 3; 0 se il percorso minimo non e noto (ancora in calcolo o non disponibile).
+  int get stars {
+    if (!optimalReady) return 0;
+    final o = optimal;
+    if (o == 0) return 0;
+    if (o == null) return moves <= 5 ? 3 : (moves <= 7 ? 2 : 1);
+    final diff = moves - o;
+    return diff <= 0 ? 3 : (diff <= 2 ? 2 : 1);
+  }
+
+  /// Mosse oltre il minimo; 0 se il minimo non e noto.
+  int get extraMoves {
+    final o = optimal;
+    if (!optimalReady || o == 0) return 0;
+    return max(0, moves - (o ?? 5));
+  }
+
+  /// Nota sul percorso minimo; null se non e (ancora) noto.
+  String? get minNote {
+    if (!optimalReady) return null;
+    final o = optimal;
+    if (o == 0) return null;
+    if (o == null) return 'Il percorso minimo è di almeno 5 mosse.';
+    return 'Il percorso minimo era di $o ${o == 1 ? 'mossa' : 'mosse'}.';
+  }
+
   /// Giudizio finale con stelle, da mostrare a partita risolta.
   String get verdict {
     if (!optimalReady) return 'Collegati in $moves mosse! (calcolo il percorso minimo…)';
-    final o = optimal;
-    if (o == 0) return 'Collegati in $moves mosse!';
-    final int stars;
-    final String note;
-    if (o == null) {
-      stars = moves <= 5 ? 3 : (moves <= 7 ? 2 : 1);
-      note = 'Il percorso minimo e di almeno 5 mosse.';
-    } else {
-      final diff = moves - o;
-      stars = diff <= 0 ? 3 : (diff <= 2 ? 2 : 1);
-      note = 'Il percorso minimo era di $o ${o == 1 ? 'mossa' : 'mosse'}.';
-    }
-    final title = ['', 'Ci sei arrivato!', 'Ottimo!', 'Percorso perfetto!'][stars];
-    return '${'★' * stars}${'☆' * (3 - stars)}  $title $moves mosse. $note';
+    final st = stars;
+    if (st == 0) return 'Collegati in $moves mosse!';
+    final title = ['', 'Ci sei arrivato!', 'Ottimo!', 'Percorso perfetto!'][st];
+    return '${'★' * st}${'☆' * (3 - st)}  $title $moves mosse. $minNote';
   }
 
   @override
@@ -126,6 +150,7 @@ class BoardState extends ChangeNotifier {
       message = 'Errore di rete: $e';
     }
     solved = _bfs('p${a.id}').containsKey('p${b.id}');
+    if (solved) finishedAt ??= DateTime.now();
     busy = false;
     notifyListeners();
   }

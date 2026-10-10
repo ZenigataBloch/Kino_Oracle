@@ -1,9 +1,14 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../game/board_state.dart';
+import '../game/game_log.dart';
+import '../game/recap.dart';
 import '../main.dart';
 import '../models/models.dart';
+import '../theme/kino_theme.dart';
 import 'metro_painter.dart';
+import 'win_overlay.dart';
 
 class Suggestion {
   final Person? person;
@@ -26,6 +31,9 @@ class _BoardScreenState extends State<BoardScreen> {
   final _tc = TransformationController();
   Size _view = Size.zero;
   int _count = 0;
+  bool _showWin = false; // riepilogo di vittoria visibile
+  bool _winSeen = false; // la vittoria e gia stata festeggiata
+  bool _logged = false; // la partita e gia nel log
   BoardState get s => widget.state;
 
   @override
@@ -37,6 +45,7 @@ class _BoardScreenState extends State<BoardScreen> {
   @override
   void dispose() {
     s.removeListener(_onState);
+    if (s.solved) _saveLog(); // se si esce prima che il minimo sia calcolato
     s.dispose();
     _tc.dispose();
     super.dispose();
@@ -48,6 +57,32 @@ class _BoardScreenState extends State<BoardScreen> {
       _count = n;
       WidgetsBinding.instance.addPostFrameCallback((_) => _fit());
     }
+    if (s.solved && !_winSeen) {
+      _winSeen = true;
+      HapticFeedback.mediumImpact();
+      setState(() => _showWin = true);
+    }
+    // Il log si scrive appena il percorso minimo e noto (le stelle dipendono da quello).
+    if (s.solved && s.optimalReady) _saveLog();
+  }
+
+  void _saveLog() {
+    if (_logged) return;
+    _logged = true;
+    GameLog.add(GameRecord.of(s)).catchError((_) {});
+  }
+
+  /// Chiude la partita: la home azzera i due attori scelti.
+  void _newGame() => Navigator.pop(context, true);
+
+  /// Parte subito una nuova partita con la coppia suggerita.
+  void _playHint(PairingHint h) {
+    final game = BoardState(h.x, h.y, s.data);
+    Navigator.pushReplacement<bool, bool>(
+      context,
+      MaterialPageRoute<bool>(builder: (_) => BoardScreen(game)),
+      result: true,
+    );
   }
 
   /// Adatta la mappa allo spazio disponibile.
@@ -102,108 +137,174 @@ class _BoardScreenState extends State<BoardScreen> {
       builder: (_, __) => Scaffold(
         appBar: AppBar(
           backgroundColor: spec.bg,
-          title: Text('${s.a.name}  ⇄  ${s.b.name}', style: const TextStyle(fontSize: 16)),
-          actions: [Center(child: Padding(padding: const EdgeInsets.all(12), child: Text('Mosse: ${s.moves}')))],
+          title: Text('${s.a.name}  ⇄  ${s.b.name}',
+              maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 16)),
+          actions: [
+            Padding(
+              padding: const EdgeInsets.only(right: 12),
+              child: Chip(
+                avatar: const Icon(Icons.alt_route, size: 18),
+                label: Text('Mosse: ${s.moves}'),
+                visualDensity: VisualDensity.compact,
+              ),
+            ),
+          ],
         ),
-        body: Column(children: [
-          if (s.solved)
-            MaterialBanner(
-              content: Text(s.verdict),
-              actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Nuova partita'))],
+        body: Stack(children: [
+          Column(children: [
+            if (s.solved && !_showWin)
+              MaterialBanner(
+                content: Text(s.verdict),
+                actions: [
+                  TextButton(onPressed: () => setState(() => _showWin = true), child: const Text('Riepilogo')),
+                  TextButton(onPressed: _newGame, child: const Text('Nuova partita')),
+                ],
+              ),
+            Expanded(child: _map(spec)),
+            if (s.message != null)
+              Container(
+                width: double.infinity,
+                margin: const EdgeInsets.fromLTRB(8, 4, 8, 0),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: spec.accent.withOpacity(.12),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: spec.accent.withOpacity(.4)),
+                ),
+                child: Row(children: [
+                  Icon(Icons.info_outline, size: 18, color: spec.accent),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text(s.message!, style: TextStyle(color: spec.accent))),
+                ]),
+              ),
+            SafeArea(child: Padding(padding: const EdgeInsets.all(8), child: _inputRow())),
+          ]),
+          if (_showWin)
+            Positioned.fill(
+              child: WinOverlay(
+                state: s,
+                spec: spec,
+                onNewGame: _newGame,
+                onClose: () => setState(() => _showWin = false),
+                onPlayHint: _playHint,
+              ),
             ),
-          Expanded(
-            child: LayoutBuilder(builder: (_, box) {
-              final size = Size(box.maxWidth, box.maxHeight);
-              if (size != _view) {
-                _view = size;
-                WidgetsBinding.instance.addPostFrameCallback((_) => _fit());
-              }
-              final lay = s.layout();
-              return Stack(children: [
-                Positioned.fill(
-                  child: InteractiveViewer(
-                    transformationController: _tc,
-                    constrained: false,
-                    minScale: 0.2,
-                    maxScale: 3,
-                    boundaryMargin: const EdgeInsets.all(600),
-                    child: CustomPaint(size: lay.size, painter: MetroPainter(s, spec, lay)),
-                  ),
-                ),
-                Positioned(
-                  right: 8,
-                  top: 8,
-                  child: IconButton.filledTonal(
-                    tooltip: 'Adatta la mappa',
-                    onPressed: _fit,
-                    icon: const Icon(Icons.fit_screen),
-                  ),
-                ),
-              ]);
-            }),
-          ),
-          if (s.message != null)
-            Padding(padding: const EdgeInsets.all(8), child: Text(s.message!, style: TextStyle(color: spec.accent))),
-          SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.all(8),
-              child: Row(children: [
-                Expanded(
-                  child: Autocomplete<Suggestion>(
-                    optionsViewOpenDirection: OptionsViewOpenDirection.up,
-                    displayStringForOption: (o) => o.label,
-                    optionsBuilder: (v) => _suggest(v.text),
-                    onSelected: _select,
-                    fieldViewBuilder: (_, ctl, focus, submit) {
-                      _field = ctl;
-                      return TextField(
-                        controller: ctl,
-                        focusNode: focus,
-                        enabled: !s.busy && !s.solved,
-                        onSubmitted: (_) => _hasOptions ? submit() : _addText(),
-                        decoration: const InputDecoration(
-                          hintText: 'Film o attore collegato a qualcosa sul tavolo…',
-                          border: OutlineInputBorder(),
-                        ),
-                      );
-                    },
-                    optionsViewBuilder: (context, onSelected, options) => Align(
-                      alignment: Alignment.bottomLeft,
-                      child: Material(
-                        elevation: 4,
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(maxHeight: 320, maxWidth: 460),
-                          child: ListView(
-                            shrinkWrap: true,
-                            padding: EdgeInsets.zero,
-                            children: [
-                              for (final o in options)
-                                ListTile(
-                                  dense: true,
-                                  leading: Icon(o.person != null ? Icons.person : Icons.movie),
-                                  title: Text(o.label),
-                                  onTap: () => onSelected(o),
-                                ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                IconButton.filled(
-                  tooltip: 'Aggiungi il testo digitato',
-                  onPressed: s.busy || s.solved ? null : _addText,
-                  icon: s.busy
-                      ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                      : const Icon(Icons.add),
-                ),
-              ]),
-            ),
-          ),
         ]),
       ),
     );
+  }
+
+  Widget _map(StyleSpec spec) {
+    return LayoutBuilder(builder: (_, box) {
+      final size = Size(box.maxWidth, box.maxHeight);
+      if (size != _view) {
+        _view = size;
+        WidgetsBinding.instance.addPostFrameCallback((_) => _fit());
+      }
+      final lay = s.layout();
+      final fresh = s.movies.isEmpty; // solo i due attori di partenza sul tavolo
+      return Stack(children: [
+        Positioned.fill(
+          child: InteractiveViewer(
+            transformationController: _tc,
+            constrained: false,
+            minScale: 0.2,
+            maxScale: 3,
+            boundaryMargin: const EdgeInsets.all(600),
+            child: CustomPaint(size: lay.size, painter: MetroPainter(s, spec, lay)),
+          ),
+        ),
+        Positioned(
+          right: 8,
+          top: 8,
+          child: IconButton.filledTonal(
+            tooltip: 'Adatta la mappa',
+            onPressed: _fit,
+            icon: const Icon(Icons.fit_screen),
+          ),
+        ),
+        if (fresh)
+          Positioned(
+            left: 16,
+            right: 16,
+            bottom: 12,
+            child: IgnorePointer(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: spec.bg.withOpacity(.92),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: spec.ink.withOpacity(.25)),
+                ),
+                child: Text(
+                  'Parti da un film in cui ha recitato ${s.a.name} o ${s.b.name}, '
+                  'poi continua finché i due gruppi si incontrano.',
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ),
+          ),
+      ]);
+    });
+  }
+
+  Widget _inputRow() {
+    return Row(children: [
+      Expanded(
+        child: Autocomplete<Suggestion>(
+          optionsViewOpenDirection: OptionsViewOpenDirection.up,
+          displayStringForOption: (o) => o.label,
+          optionsBuilder: (v) => _suggest(v.text),
+          onSelected: _select,
+          fieldViewBuilder: (_, ctl, focus, submit) {
+            _field = ctl;
+            return TextField(
+              controller: ctl,
+              focusNode: focus,
+              enabled: !s.busy && !s.solved,
+              onSubmitted: (_) => _hasOptions ? submit() : _addText(),
+              decoration: InputDecoration(
+                hintText: 'Film o attore collegato a qualcosa sul tavolo…',
+                prefixIcon: const Icon(Icons.search),
+                filled: true,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+              ),
+            );
+          },
+          optionsViewBuilder: (context, onSelected, options) => Align(
+            alignment: Alignment.bottomLeft,
+            child: Material(
+              elevation: 4,
+              borderRadius: BorderRadius.circular(12),
+              clipBehavior: Clip.antiAlias,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 320, maxWidth: 460),
+                child: ListView(
+                  shrinkWrap: true,
+                  padding: EdgeInsets.zero,
+                  children: [
+                    for (final o in options)
+                      ListTile(
+                        dense: true,
+                        leading: Icon(o.person != null ? Icons.person : Icons.movie),
+                        title: Text(o.label),
+                        onTap: () => onSelected(o),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+      const SizedBox(width: 8),
+      IconButton.filled(
+        tooltip: 'Aggiungi il testo digitato',
+        onPressed: s.busy || s.solved ? null : _addText,
+        icon: s.busy
+            ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+            : const Icon(Icons.add),
+      ),
+    ]);
   }
 }

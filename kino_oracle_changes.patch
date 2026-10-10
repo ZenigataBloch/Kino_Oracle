@@ -1,0 +1,1595 @@
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+new file mode 100644
+index 0000000..4f146a1
+--- /dev/null
++++ b/.github/workflows/ci.yml
+@@ -0,0 +1,20 @@
++name: CI
++
++on:
++  push:
++    branches: [main]
++  pull_request:
++
++jobs:
++  check:
++    runs-on: ubuntu-latest
++    steps:
++      - uses: actions/checkout@v4
++      - uses: subosito/flutter-action@v2
++        with:
++          channel: stable
++          cache: true
++      - run: flutter pub get
++      # Falliscono solo gli errori: avvisi e suggerimenti di stile non bloccano.
++      - run: flutter analyze --no-fatal-warnings --no-fatal-infos
++      - run: flutter test
+diff --git a/.github/workflows/release.yml b/.github/workflows/release.yml
+new file mode 100644
+index 0000000..07e498f
+--- /dev/null
++++ b/.github/workflows/release.yml
+@@ -0,0 +1,121 @@
++name: Release
++
++# Si avvia quando crei un tag tipo v0.2.0 (git tag v0.2.0 && git push origin v0.2.0),
++# oppure a mano dalla scheda Actions. Con il tag pubblica anche la Release su GitHub.
++on:
++  push:
++    tags: ['v*']
++  workflow_dispatch:
++
++permissions:
++  contents: write
++
++jobs:
++  android:
++    runs-on: ubuntu-latest
++    env:
++      KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
++    steps:
++      - uses: actions/checkout@v4
++      - uses: actions/setup-java@v4
++        with:
++          distribution: temurin
++          java-version: '17'
++      - uses: subosito/flutter-action@v2
++        with:
++          channel: stable
++          cache: true
++
++      - name: Versione
++        id: ver
++        shell: bash
++        run: |
++          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then V="${GITHUB_REF_NAME#v}"; else V=$(grep '^version:' pubspec.yaml | sed 's/version: *//; s/+.*//'); fi
++          echo "name=$V" >> "$GITHUB_OUTPUT"
++
++      # Senza chiave di firma l'APK usa la chiave di debug e NON si potrà aggiornare
++      # sopra una versione precedente: configura i secret (vedi docs/RILASCI.md).
++      - name: Chiave di firma
++        if: env.KEYSTORE_B64 != ''
++        run: |
++          echo "$KEYSTORE_B64" | base64 -d > android/app/upload-keystore.jks
++          cat > android/key.properties <<EOF2
++          storeFile=upload-keystore.jks
++          storePassword=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
++          keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}
++          keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}
++          EOF2
++
++      - run: flutter pub get
++      - name: Compila APK
++        run: >
++          flutter build apk --release
++          --build-name=${{ steps.ver.outputs.name }}
++          --build-number=${{ github.run_number }}
++          --dart-define=TMDB_TOKEN=${{ secrets.TMDB_TOKEN }}
++      - name: Rinomina
++        run: |
++          mkdir dist
++          cp build/app/outputs/flutter-apk/app-release.apk "dist/KinoOracle-${{ steps.ver.outputs.name }}.apk"
++      - uses: actions/upload-artifact@v4
++        with:
++          name: android
++          path: dist/*
++
++  windows:
++    runs-on: windows-latest
++    steps:
++      - uses: actions/checkout@v4
++      - uses: subosito/flutter-action@v2
++        with:
++          channel: stable
++          cache: true
++
++      - name: Versione
++        id: ver
++        shell: bash
++        run: |
++          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then V="${GITHUB_REF_NAME#v}"; else V=$(grep '^version:' pubspec.yaml | sed 's/version: *//; s/+.*//'); fi
++          echo "name=$V" >> "$GITHUB_OUTPUT"
++
++      - run: flutter pub get
++      - name: Compila Windows
++        shell: bash
++        run: >
++          flutter build windows --release
++          --build-name=${{ steps.ver.outputs.name }}
++          --build-number=${{ github.run_number }}
++          --dart-define=TMDB_TOKEN=${{ secrets.TMDB_TOKEN }}
++
++      - name: Zip portatile
++        shell: pwsh
++        run: |
++          New-Item -ItemType Directory -Force dist | Out-Null
++          Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath "dist\KinoOracle-windows-${{ steps.ver.outputs.name }}.zip"
++
++      # Installer singolo .exe (Inno Setup). Se fallisce, resta comunque lo zip.
++      - name: Installer .exe
++        continue-on-error: true
++        shell: pwsh
++        run: |
++          choco install innosetup -y --no-progress
++          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DAppVersion=${{ steps.ver.outputs.name }}" installer\kino_oracle.iss
++
++      - uses: actions/upload-artifact@v4
++        with:
++          name: windows
++          path: dist/*
++
++  release:
++    needs: [android, windows]
++    if: startsWith(github.ref, 'refs/tags/v')
++    runs-on: ubuntu-latest
++    steps:
++      - uses: actions/download-artifact@v4
++        with:
++          path: dist
++          merge-multiple: true
++      - uses: softprops/action-gh-release@v2
++        with:
++          files: dist/*
++          generate_release_notes: true
+diff --git a/README.md b/README.md
+index c69e4a5..d5c1d0c 100644
+--- a/README.md
++++ b/README.md
+@@ -14,8 +14,11 @@ flutter run -d chrome --dart-define=TMDB_TOKEN=LA_TUA_CHIAVE
+ Senza `--dart-define` l'app usa Wikidata. La chiave TMDB puo essere il "Read Access Token" (v4) o la "API Key" (v3).
+ **Non scrivere mai la chiave nel codice e non committarla su GitHub.**
+ 
+-Su Android aggiungi in android/app/src/main/AndroidManifest.xml:
+-`<uses-permission android:name="android.permission.INTERNET"/>`
++Il permesso INTERNET per Android è già nel manifest.
++
++## Rilasci (APK e exe)
++Creando un tag `vX.Y.Z` GitHub Actions compila APK e installer Windows e li pubblica nelle Releases.
++Dettagli, secret e piano aggiornamenti: [docs/RILASCI.md](docs/RILASCI.md).
+ 
+ ## Crediti (da mostrare nell'app)
+ - TMDB: "This product uses the TMDB API but is not endorsed or certified by TMDB." + logo TMDB.
+diff --git a/android/app/build.gradle.kts b/android/app/build.gradle.kts
+index 3ac76d9..fcc7afd 100644
+--- a/android/app/build.gradle.kts
++++ b/android/app/build.gradle.kts
+@@ -1,9 +1,20 @@
++import java.io.FileInputStream
++import java.util.Properties
++
+ plugins {
+     id("com.android.application")
+     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
+     id("dev.flutter.flutter-gradle-plugin")
+ }
+ 
++// Firma di release: se esiste android/key.properties (creato dalla CI dai secret) si usa
++// quella chiave, altrimenti ripiega sulla chiave di debug (build locali).
++val keystoreProperties = Properties()
++val keystorePropertiesFile = rootProject.file("key.properties")
++if (keystorePropertiesFile.exists()) {
++    keystoreProperties.load(FileInputStream(keystorePropertiesFile))
++}
++
+ android {
+     namespace = "it.zenigata.kino_oracle"
+     compileSdk = flutter.compileSdkVersion
+@@ -29,11 +40,24 @@ android {
+         versionName = flutter.versionName
+     }
+ 
++    signingConfigs {
++        if (keystorePropertiesFile.exists()) {
++            create("release") {
++                keyAlias = keystoreProperties["keyAlias"] as String
++                keyPassword = keystoreProperties["keyPassword"] as String
++                storeFile = file(keystoreProperties["storeFile"] as String)
++                storePassword = keystoreProperties["storePassword"] as String
++            }
++        }
++    }
++
+     buildTypes {
+         release {
+-            // TODO: Add your own signing config for the release build.
+-            // Signing with the debug keys for now, so `flutter run --release` works.
+-            signingConfig = signingConfigs.getByName("debug")
++            signingConfig = if (keystorePropertiesFile.exists()) {
++                signingConfigs.getByName("release")
++            } else {
++                signingConfigs.getByName("debug")
++            }
+         }
+     }
+ }
+diff --git a/android/app/src/main/AndroidManifest.xml b/android/app/src/main/AndroidManifest.xml
+index 5e4490e..8def9cf 100644
+--- a/android/app/src/main/AndroidManifest.xml
++++ b/android/app/src/main/AndroidManifest.xml
+@@ -1,6 +1,7 @@
+ <manifest xmlns:android="http://schemas.android.com/apk/res/android">
++    <uses-permission android:name="android.permission.INTERNET"/>
+     <application
+-        android:label="kino_oracle"
++        android:label="Kino Oracle"
+         android:name="${applicationName}"
+         android:icon="@mipmap/ic_launcher">
+         <activity
+diff --git a/docs/RILASCI.md b/docs/RILASCI.md
+new file mode 100644
+index 0000000..81159d1
+--- /dev/null
++++ b/docs/RILASCI.md
+@@ -0,0 +1,40 @@
++# Rilasci e aggiornamenti
++
++## Come si pubblica una versione
++1. Aggiorna `version:` in `pubspec.yaml` (facoltativo: la CI usa il nome del tag).
++2. Crea e invia un tag:
++   ```
++   git tag v0.2.0
++   git push origin v0.2.0
++   ```
++3. GitHub Actions (`.github/workflows/release.yml`) compila:
++   - **Android**: `KinoOracle-<versione>.apk`
++   - **Windows**: `KinoOracle-Setup-<versione>.exe` (installer) e `KinoOracle-windows-<versione>.zip` (portatile)
++
++   e pubblica tutto nella pagina **Releases** del repository. Si può avviare anche a mano dalla scheda *Actions* (in quel caso i file restano negli *artifact* del run).
++
++Ogni push su `main` e ogni pull request eseguono `flutter analyze` e `flutter test` (`ci.yml`).
++
++## Secret da configurare (Settings → Secrets and variables → Actions)
++| Secret | A cosa serve |
++|---|---|
++| `TMDB_TOKEN` | chiave TMDB incorporata nell'app (se manca, l'app usa Wikidata) |
++| `ANDROID_KEYSTORE_BASE64` | keystore di firma, codificato in base64 |
++| `ANDROID_KEYSTORE_PASSWORD` | password del keystore |
++| `ANDROID_KEY_PASSWORD` | password della chiave |
++| `ANDROID_KEY_ALIAS` | alias della chiave |
++
++Il token TMDB incorporato in un'app distribuita si può estrarre: usa un token di sola lettura e rigeneralo se serve.
++
++### Chiave di firma Android (una volta sola)
++```
++keytool -genkey -v -keystore upload-keystore.jks -keyalg RSA -keysize 2048 -validity 10000 -alias kino
++base64 -w0 upload-keystore.jks    # su Windows PowerShell: [Convert]::ToBase64String([IO.File]::ReadAllBytes("upload-keystore.jks"))
++```
++Incolla il risultato in `ANDROID_KEYSTORE_BASE64`. **Conserva il file `.jks` e le password in un posto sicuro**: se perdi la chiave, gli utenti non potranno più aggiornare l'app sopra la versione installata (dovranno disinstallarla). Senza questi secret l'APK viene firmato con la chiave di debug, che cambia a ogni build, e l'aggiornamento sopra una versione precedente fallisce.
++
++## Piano per gli aggiornamenti via GitHub
++1. **Subito (già pronto):** si scarica l'ultima versione dalla pagina Releases. Android aggiorna l'APK installandolo sopra (stessa firma, `build-number` crescente = numero del run). Windows: si esegue il nuovo installer, che sostituisce la versione precedente.
++2. **Controllo in-app (da fare):** all'avvio, `GET https://api.github.com/repos/ZenigataBloch/Kino_Oracle/releases/latest`, confronto tra `tag_name` e la versione installata (pacchetto `package_info_plus`) e, se più nuova, una finestra "Aggiornamento disponibile" con il link alla release (`url_launcher`). Il pacchetto `http` è già nelle dipendenze.
++3. **Windows senza compilare (da fare):** il launcher `tools/launch.ps1` oggi fa `git pull` + `flutter build`, quindi richiede Flutter e Visual Studio sul PC. Con le release si può sostituire quel passaggio con: scarica l'ultimo installer dalla release e lancialo con `/SILENT /CLOSEAPPLICATIONS`.
++4. **Android in-app (facoltativo):** scaricare l'APK e avviare l'installazione richiede il permesso `REQUEST_INSTALL_PACKAGES` e l'autorizzazione dell'utente; il semplice link alla release è molto più semplice e affidabile.
+diff --git a/installer/kino_oracle.iss b/installer/kino_oracle.iss
+new file mode 100644
+index 0000000..9f3c2d1
+--- /dev/null
++++ b/installer/kino_oracle.iss
+@@ -0,0 +1,35 @@
++; Installer Windows di Kino Oracle (Inno Setup 6).
++; Uso locale:  iscc /DAppVersion=0.2.0 installer\kino_oracle.iss  (dopo flutter build windows --release)
++#ifndef AppVersion
++  #define AppVersion "0.0.0"
++#endif
++
++[Setup]
++AppId={{8F6C2B52-3E0B-4B7A-9C1D-4B1F5A3E7C21}
++AppName=Kino Oracle
++AppVersion={#AppVersion}
++AppPublisher=Zenigata
++DefaultDirName={autopf}\Kino Oracle
++DefaultGroupName=Kino Oracle
++OutputDir=..\dist
++OutputBaseFilename=KinoOracle-Setup-{#AppVersion}
++SetupIconFile=..\windows\runner\resources\app_icon.ico
++UninstallDisplayIcon={app}\kino_oracle.exe
++Compression=lzma2
++SolidCompression=yes
++WizardStyle=modern
++; Installazione per l'utente corrente: non servono i permessi di amministratore.
++PrivilegesRequired=lowest
++
++[Tasks]
++Name: "desktopicon"; Description: "Crea un'icona sul desktop"; Flags: unchecked
++
++[Files]
++Source: "..\build\windows\x64\runner\Release\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
++
++[Icons]
++Name: "{group}\Kino Oracle"; Filename: "{app}\kino_oracle.exe"
++Name: "{autodesktop}\Kino Oracle"; Filename: "{app}\kino_oracle.exe"; Tasks: desktopicon
++
++[Run]
++Filename: "{app}\kino_oracle.exe"; Description: "Avvia Kino Oracle"; Flags: nowait postinstall skipifsilent
+diff --git a/lib/game/board_state.dart b/lib/game/board_state.dart
+index 8fac4ad..e098e22 100644
+--- a/lib/game/board_state.dart
++++ b/lib/game/board_state.dart
+@@ -30,8 +30,16 @@ class BoardState extends ChangeNotifier {
+   bool optimalReady = false;
+   bool _closed = false;
+ 
++  // Tempo di gioco: parte alla creazione, si ferma al collegamento.
++  final DateTime startedAt = DateTime.now();
++  DateTime? finishedAt;
++  Duration get elapsed => (finishedAt ?? DateTime.now()).difference(startedAt);
++
+   int get moves => people.length + movies.length - 2;
+ 
++  /// Distanze (in archi del grafo) da un nodo, es. 'p123'. Usato per i suggerimenti.
++  Map<String, int> distancesFrom(String start) => _bfs(start);
++
+   Future<void> _solve() async {
+     final r = await Solver.shortest(data, a.id, b.id, () => _closed);
+     if (_closed) return;
+@@ -40,23 +48,39 @@ class BoardState extends ChangeNotifier {
+     notifyListeners();
+   }
+ 
++  /// Stelle da 1 a 3; 0 se il percorso minimo non e noto (ancora in calcolo o non disponibile).
++  int get stars {
++    if (!optimalReady) return 0;
++    final o = optimal;
++    if (o == 0) return 0;
++    if (o == null) return moves <= 5 ? 3 : (moves <= 7 ? 2 : 1);
++    final diff = moves - o;
++    return diff <= 0 ? 3 : (diff <= 2 ? 2 : 1);
++  }
++
++  /// Mosse oltre il minimo; 0 se il minimo non e noto.
++  int get extraMoves {
++    final o = optimal;
++    if (!optimalReady || o == 0) return 0;
++    return max(0, moves - (o ?? 5));
++  }
++
++  /// Nota sul percorso minimo; null se non e (ancora) noto.
++  String? get minNote {
++    if (!optimalReady) return null;
++    final o = optimal;
++    if (o == 0) return null;
++    if (o == null) return 'Il percorso minimo è di almeno 5 mosse.';
++    return 'Il percorso minimo era di $o ${o == 1 ? 'mossa' : 'mosse'}.';
++  }
++
+   /// Giudizio finale con stelle, da mostrare a partita risolta.
+   String get verdict {
+     if (!optimalReady) return 'Collegati in $moves mosse! (calcolo il percorso minimo…)';
+-    final o = optimal;
+-    if (o == 0) return 'Collegati in $moves mosse!';
+-    final int stars;
+-    final String note;
+-    if (o == null) {
+-      stars = moves <= 5 ? 3 : (moves <= 7 ? 2 : 1);
+-      note = 'Il percorso minimo e di almeno 5 mosse.';
+-    } else {
+-      final diff = moves - o;
+-      stars = diff <= 0 ? 3 : (diff <= 2 ? 2 : 1);
+-      note = 'Il percorso minimo era di $o ${o == 1 ? 'mossa' : 'mosse'}.';
+-    }
+-    final title = ['', 'Ci sei arrivato!', 'Ottimo!', 'Percorso perfetto!'][stars];
+-    return '${'★' * stars}${'☆' * (3 - stars)}  $title $moves mosse. $note';
++    final st = stars;
++    if (st == 0) return 'Collegati in $moves mosse!';
++    final title = ['', 'Ci sei arrivato!', 'Ottimo!', 'Percorso perfetto!'][st];
++    return '${'★' * st}${'☆' * (3 - st)}  $title $moves mosse. $minNote';
+   }
+ 
+   @override
+@@ -126,6 +150,7 @@ class BoardState extends ChangeNotifier {
+       message = 'Errore di rete: $e';
+     }
+     solved = _bfs('p${a.id}').containsKey('p${b.id}');
++    if (solved) finishedAt ??= DateTime.now();
+     busy = false;
+     notifyListeners();
+   }
+diff --git a/lib/game/game_log.dart b/lib/game/game_log.dart
+new file mode 100644
+index 0000000..7728251
+--- /dev/null
++++ b/lib/game/game_log.dart
+@@ -0,0 +1,84 @@
++import 'dart:convert';
++import 'package:shared_preferences/shared_preferences.dart';
++import 'board_state.dart';
++import 'recap.dart';
++
++/// Una partita conclusa, come viene salvata nel log.
++class GameRecord {
++  final DateTime date;
++  final String a, b;
++  final int moves, stars, points, seconds;
++
++  const GameRecord({
++    required this.date,
++    required this.a,
++    required this.b,
++    required this.moves,
++    required this.stars,
++    required this.points,
++    required this.seconds,
++  });
++
++  factory GameRecord.of(BoardState s) {
++    final r = Recap.of(s);
++    return GameRecord(
++      date: DateTime.now(),
++      a: s.a.name,
++      b: s.b.name,
++      moves: s.moves,
++      stars: r.stars,
++      points: r.total,
++      seconds: r.seconds,
++    );
++  }
++
++  Map<String, dynamic> toJson() =>
++      {'d': date.toIso8601String(), 'a': a, 'b': b, 'm': moves, 's': stars, 'p': points, 't': seconds};
++
++  factory GameRecord.fromJson(Map<String, dynamic> j) => GameRecord(
++        date: DateTime.tryParse(j['d'] as String? ?? '') ?? DateTime.now(),
++        a: j['a'] as String? ?? '?',
++        b: j['b'] as String? ?? '?',
++        moves: (j['m'] as num?)?.toInt() ?? 0,
++        stars: (j['s'] as num?)?.toInt() ?? 0,
++        points: (j['p'] as num?)?.toInt() ?? 0,
++        seconds: (j['t'] as num?)?.toInt() ?? 0,
++      );
++}
++
++/// Registro delle partite precedenti (SharedPreferences: funziona su Windows, Android e web).
++/// Quando arriva la partita successiva alla [maxGames]-esima il registro si svuota
++/// e riparte da quella.
++class GameLog {
++  static const maxGames = 25;
++  static const _key = 'game_log';
++
++  static Future<List<GameRecord>> load() async {
++    final p = await SharedPreferences.getInstance();
++    final out = <GameRecord>[];
++    for (final s in p.getStringList(_key) ?? const <String>[]) {
++      try {
++        out.add(GameRecord.fromJson(jsonDecode(s) as Map<String, dynamic>));
++      } catch (_) {
++        // voce rovinata: la salto
++      }
++    }
++    return out;
++  }
++
++  static Future<void> add(GameRecord r) async {
++    final p = await SharedPreferences.getInstance();
++    var list = p.getStringList(_key) ?? <String>[];
++    if (list.length >= maxGames) list = <String>[];
++    list = [...list, jsonEncode(r.toJson())];
++    await p.setStringList(_key, list);
++  }
++
++  static Future<void> clear() async {
++    final p = await SharedPreferences.getInstance();
++    await p.remove(_key);
++  }
++
++  /// Coppie già giocate (per non suggerirle di nuovo).
++  static Future<Set<String>> playedPairs() async => {for (final r in await load()) pairKey(r.a, r.b)};
++}
+diff --git a/lib/game/recap.dart b/lib/game/recap.dart
+new file mode 100644
+index 0000000..510cb2e
+--- /dev/null
++++ b/lib/game/recap.dart
+@@ -0,0 +1,84 @@
++import 'dart:math';
++import '../models/models.dart';
++import 'board_state.dart';
++
++/// Riepilogo a partita finita: statistiche e punteggio con il dettaglio dei punti.
++///
++/// Punti = base + stelle + bonus velocità - penalità per le mosse oltre il minimo.
++class Recap {
++  static const base = 500; // collegamento completato
++  static const perStar = 200; // per ogni stella (max 3)
++  static const timeBudget = 300; // 1 punto per ogni secondo risparmiato sui 5 minuti
++  static const perExtraMove = 25; // penalità per ogni mossa oltre il minimo
++
++  final int stars, moves, actors, movies, seconds, extra;
++  final int basePts, starPts, timePts, penaltyPts;
++
++  const Recap({
++    required this.stars,
++    required this.moves,
++    required this.actors,
++    required this.movies,
++    required this.seconds,
++    required this.extra,
++    required this.basePts,
++    required this.starPts,
++    required this.timePts,
++    required this.penaltyPts,
++  });
++
++  int get total => max(0, basePts + starPts + timePts - penaltyPts);
++
++  factory Recap.of(BoardState s) {
++    final secs = s.elapsed.inSeconds;
++    final st = s.stars;
++    final ex = s.extraMoves;
++    return Recap(
++      stars: st,
++      moves: s.moves,
++      actors: s.people.length,
++      movies: s.movies.length,
++      seconds: secs,
++      extra: ex,
++      basePts: base,
++      starPts: st * perStar,
++      timePts: max(0, timeBudget - secs),
++      penaltyPts: ex * perExtraMove,
++    );
++  }
++}
++
++/// Chiave di una coppia di attori, indipendente dall'ordine e dalla fonte dati.
++String pairKey(String a, String b) {
++  final l = [a.toLowerCase(), b.toLowerCase()]..sort();
++  return l.join('|');
++}
++
++/// Suggerimento per la prossima partita: due attori incontrati sul tavolo.
++class PairingHint {
++  final Person x, y;
++  final int films; // film che li separano sul tavolo
++  const PairingHint(this.x, this.y, this.films);
++}
++
++/// Sceglie, tra gli attori presenti sul tavolo, la coppia più lontana (almeno 2 film)
++/// che non sia la coppia appena giocata né una già giocata (`played`).
++/// Sul tavolo gli attori sono collegati solo tramite film: le distanze tra attori
++/// sono sempre pari (attore-film-attore = 2 archi), quindi i film sono dist / 2.
++PairingHint? suggestPairing(BoardState s, Set<String> played) {
++  PairingHint? best;
++  final list = s.people.values.toList();
++  for (var i = 0; i < list.length; i++) {
++    final d = s.distancesFrom('p${list[i].id}');
++    for (var j = i + 1; j < list.length; j++) {
++      final x = list[i], y = list[j];
++      final isCurrent = (x.id == s.a.id && y.id == s.b.id) || (x.id == s.b.id && y.id == s.a.id);
++      if (isCurrent || played.contains(pairKey(x.name, y.name))) continue;
++      final dist = d['p${y.id}'];
++      if (dist == null || dist < 4) continue;
++      final films = dist ~/ 2;
++      if (best == null || films > best.films) best = PairingHint(x, y, films);
++    }
++  }
++  return best;
++}
+diff --git a/lib/ui/board_screen.dart b/lib/ui/board_screen.dart
+index 22ddcf2..73bb278 100644
+--- a/lib/ui/board_screen.dart
++++ b/lib/ui/board_screen.dart
+@@ -1,9 +1,14 @@
+ import 'dart:math';
+ import 'package:flutter/material.dart';
++import 'package:flutter/services.dart';
+ import '../game/board_state.dart';
++import '../game/game_log.dart';
++import '../game/recap.dart';
+ import '../main.dart';
+ import '../models/models.dart';
++import '../theme/kino_theme.dart';
+ import 'metro_painter.dart';
++import 'win_overlay.dart';
+ 
+ class Suggestion {
+   final Person? person;
+@@ -26,6 +31,9 @@ class _BoardScreenState extends State<BoardScreen> {
+   final _tc = TransformationController();
+   Size _view = Size.zero;
+   int _count = 0;
++  bool _showWin = false; // riepilogo di vittoria visibile
++  bool _winSeen = false; // la vittoria e gia stata festeggiata
++  bool _logged = false; // la partita e gia nel log
+   BoardState get s => widget.state;
+ 
+   @override
+@@ -37,6 +45,7 @@ class _BoardScreenState extends State<BoardScreen> {
+   @override
+   void dispose() {
+     s.removeListener(_onState);
++    if (s.solved) _saveLog(); // se si esce prima che il minimo sia calcolato
+     s.dispose();
+     _tc.dispose();
+     super.dispose();
+@@ -48,6 +57,32 @@ class _BoardScreenState extends State<BoardScreen> {
+       _count = n;
+       WidgetsBinding.instance.addPostFrameCallback((_) => _fit());
+     }
++    if (s.solved && !_winSeen) {
++      _winSeen = true;
++      HapticFeedback.mediumImpact();
++      setState(() => _showWin = true);
++    }
++    // Il log si scrive appena il percorso minimo e noto (le stelle dipendono da quello).
++    if (s.solved && s.optimalReady) _saveLog();
++  }
++
++  void _saveLog() {
++    if (_logged) return;
++    _logged = true;
++    GameLog.add(GameRecord.of(s)).catchError((_) {});
++  }
++
++  /// Chiude la partita: la home azzera i due attori scelti.
++  void _newGame() => Navigator.pop(context, true);
++
++  /// Parte subito una nuova partita con la coppia suggerita.
++  void _playHint(PairingHint h) {
++    final game = BoardState(h.x, h.y, s.data);
++    Navigator.pushReplacement<bool, bool>(
++      context,
++      MaterialPageRoute<bool>(builder: (_) => BoardScreen(game)),
++      result: true,
++    );
+   }
+ 
+   /// Adatta la mappa allo spazio disponibile.
+@@ -102,108 +137,174 @@ class _BoardScreenState extends State<BoardScreen> {
+       builder: (_, __) => Scaffold(
+         appBar: AppBar(
+           backgroundColor: spec.bg,
+-          title: Text('${s.a.name}  ⇄  ${s.b.name}', style: const TextStyle(fontSize: 16)),
+-          actions: [Center(child: Padding(padding: const EdgeInsets.all(12), child: Text('Mosse: ${s.moves}')))],
++          title: Text('${s.a.name}  ⇄  ${s.b.name}',
++              maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 16)),
++          actions: [
++            Padding(
++              padding: const EdgeInsets.only(right: 12),
++              child: Chip(
++                avatar: const Icon(Icons.alt_route, size: 18),
++                label: Text('Mosse: ${s.moves}'),
++                visualDensity: VisualDensity.compact,
++              ),
++            ),
++          ],
+         ),
+-        body: Column(children: [
+-          if (s.solved)
+-            MaterialBanner(
+-              content: Text(s.verdict),
+-              actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Nuova partita'))],
++        body: Stack(children: [
++          Column(children: [
++            if (s.solved && !_showWin)
++              MaterialBanner(
++                content: Text(s.verdict),
++                actions: [
++                  TextButton(onPressed: () => setState(() => _showWin = true), child: const Text('Riepilogo')),
++                  TextButton(onPressed: _newGame, child: const Text('Nuova partita')),
++                ],
++              ),
++            Expanded(child: _map(spec)),
++            if (s.message != null)
++              Container(
++                width: double.infinity,
++                margin: const EdgeInsets.fromLTRB(8, 4, 8, 0),
++                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
++                decoration: BoxDecoration(
++                  color: spec.accent.withOpacity(.12),
++                  borderRadius: BorderRadius.circular(10),
++                  border: Border.all(color: spec.accent.withOpacity(.4)),
++                ),
++                child: Row(children: [
++                  Icon(Icons.info_outline, size: 18, color: spec.accent),
++                  const SizedBox(width: 8),
++                  Expanded(child: Text(s.message!, style: TextStyle(color: spec.accent))),
++                ]),
++              ),
++            SafeArea(child: Padding(padding: const EdgeInsets.all(8), child: _inputRow())),
++          ]),
++          if (_showWin)
++            Positioned.fill(
++              child: WinOverlay(
++                state: s,
++                spec: spec,
++                onNewGame: _newGame,
++                onClose: () => setState(() => _showWin = false),
++                onPlayHint: _playHint,
++              ),
+             ),
+-          Expanded(
+-            child: LayoutBuilder(builder: (_, box) {
+-              final size = Size(box.maxWidth, box.maxHeight);
+-              if (size != _view) {
+-                _view = size;
+-                WidgetsBinding.instance.addPostFrameCallback((_) => _fit());
+-              }
+-              final lay = s.layout();
+-              return Stack(children: [
+-                Positioned.fill(
+-                  child: InteractiveViewer(
+-                    transformationController: _tc,
+-                    constrained: false,
+-                    minScale: 0.2,
+-                    maxScale: 3,
+-                    boundaryMargin: const EdgeInsets.all(600),
+-                    child: CustomPaint(size: lay.size, painter: MetroPainter(s, spec, lay)),
+-                  ),
++        ]),
++      ),
++    );
++  }
++
++  Widget _map(StyleSpec spec) {
++    return LayoutBuilder(builder: (_, box) {
++      final size = Size(box.maxWidth, box.maxHeight);
++      if (size != _view) {
++        _view = size;
++        WidgetsBinding.instance.addPostFrameCallback((_) => _fit());
++      }
++      final lay = s.layout();
++      final fresh = s.movies.isEmpty; // solo i due attori di partenza sul tavolo
++      return Stack(children: [
++        Positioned.fill(
++          child: InteractiveViewer(
++            transformationController: _tc,
++            constrained: false,
++            minScale: 0.2,
++            maxScale: 3,
++            boundaryMargin: const EdgeInsets.all(600),
++            child: CustomPaint(size: lay.size, painter: MetroPainter(s, spec, lay)),
++          ),
++        ),
++        Positioned(
++          right: 8,
++          top: 8,
++          child: IconButton.filledTonal(
++            tooltip: 'Adatta la mappa',
++            onPressed: _fit,
++            icon: const Icon(Icons.fit_screen),
++          ),
++        ),
++        if (fresh)
++          Positioned(
++            left: 16,
++            right: 16,
++            bottom: 12,
++            child: IgnorePointer(
++              child: Container(
++                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
++                decoration: BoxDecoration(
++                  color: spec.bg.withOpacity(.92),
++                  borderRadius: BorderRadius.circular(12),
++                  border: Border.all(color: spec.ink.withOpacity(.25)),
+                 ),
+-                Positioned(
+-                  right: 8,
+-                  top: 8,
+-                  child: IconButton.filledTonal(
+-                    tooltip: 'Adatta la mappa',
+-                    onPressed: _fit,
+-                    icon: const Icon(Icons.fit_screen),
+-                  ),
++                child: Text(
++                  'Parti da un film in cui ha recitato ${s.a.name} o ${s.b.name}, '
++                  'poi continua finché i due gruppi si incontrano.',
++                  textAlign: TextAlign.center,
+                 ),
+-              ]);
+-            }),
++              ),
++            ),
+           ),
+-          if (s.message != null)
+-            Padding(padding: const EdgeInsets.all(8), child: Text(s.message!, style: TextStyle(color: spec.accent))),
+-          SafeArea(
+-            child: Padding(
+-              padding: const EdgeInsets.all(8),
+-              child: Row(children: [
+-                Expanded(
+-                  child: Autocomplete<Suggestion>(
+-                    optionsViewOpenDirection: OptionsViewOpenDirection.up,
+-                    displayStringForOption: (o) => o.label,
+-                    optionsBuilder: (v) => _suggest(v.text),
+-                    onSelected: _select,
+-                    fieldViewBuilder: (_, ctl, focus, submit) {
+-                      _field = ctl;
+-                      return TextField(
+-                        controller: ctl,
+-                        focusNode: focus,
+-                        enabled: !s.busy && !s.solved,
+-                        onSubmitted: (_) => _hasOptions ? submit() : _addText(),
+-                        decoration: const InputDecoration(
+-                          hintText: 'Film o attore collegato a qualcosa sul tavolo…',
+-                          border: OutlineInputBorder(),
+-                        ),
+-                      );
+-                    },
+-                    optionsViewBuilder: (context, onSelected, options) => Align(
+-                      alignment: Alignment.bottomLeft,
+-                      child: Material(
+-                        elevation: 4,
+-                        child: ConstrainedBox(
+-                          constraints: const BoxConstraints(maxHeight: 320, maxWidth: 460),
+-                          child: ListView(
+-                            shrinkWrap: true,
+-                            padding: EdgeInsets.zero,
+-                            children: [
+-                              for (final o in options)
+-                                ListTile(
+-                                  dense: true,
+-                                  leading: Icon(o.person != null ? Icons.person : Icons.movie),
+-                                  title: Text(o.label),
+-                                  onTap: () => onSelected(o),
+-                                ),
+-                            ],
+-                          ),
+-                        ),
++      ]);
++    });
++  }
++
++  Widget _inputRow() {
++    return Row(children: [
++      Expanded(
++        child: Autocomplete<Suggestion>(
++          optionsViewOpenDirection: OptionsViewOpenDirection.up,
++          displayStringForOption: (o) => o.label,
++          optionsBuilder: (v) => _suggest(v.text),
++          onSelected: _select,
++          fieldViewBuilder: (_, ctl, focus, submit) {
++            _field = ctl;
++            return TextField(
++              controller: ctl,
++              focusNode: focus,
++              enabled: !s.busy && !s.solved,
++              onSubmitted: (_) => _hasOptions ? submit() : _addText(),
++              decoration: InputDecoration(
++                hintText: 'Film o attore collegato a qualcosa sul tavolo…',
++                prefixIcon: const Icon(Icons.search),
++                filled: true,
++                border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
++              ),
++            );
++          },
++          optionsViewBuilder: (context, onSelected, options) => Align(
++            alignment: Alignment.bottomLeft,
++            child: Material(
++              elevation: 4,
++              borderRadius: BorderRadius.circular(12),
++              clipBehavior: Clip.antiAlias,
++              child: ConstrainedBox(
++                constraints: const BoxConstraints(maxHeight: 320, maxWidth: 460),
++                child: ListView(
++                  shrinkWrap: true,
++                  padding: EdgeInsets.zero,
++                  children: [
++                    for (final o in options)
++                      ListTile(
++                        dense: true,
++                        leading: Icon(o.person != null ? Icons.person : Icons.movie),
++                        title: Text(o.label),
++                        onTap: () => onSelected(o),
+                       ),
+-                    ),
+-                  ),
+-                ),
+-                const SizedBox(width: 8),
+-                IconButton.filled(
+-                  tooltip: 'Aggiungi il testo digitato',
+-                  onPressed: s.busy || s.solved ? null : _addText,
+-                  icon: s.busy
+-                      ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+-                      : const Icon(Icons.add),
++                  ],
+                 ),
+-              ]),
++              ),
+             ),
+           ),
+-        ]),
++        ),
+       ),
+-    );
++      const SizedBox(width: 8),
++      IconButton.filled(
++        tooltip: 'Aggiungi il testo digitato',
++        onPressed: s.busy || s.solved ? null : _addText,
++        icon: s.busy
++            ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
++            : const Icon(Icons.add),
++      ),
++    ]);
+   }
+ }
+diff --git a/lib/ui/history_screen.dart b/lib/ui/history_screen.dart
+new file mode 100644
+index 0000000..525c41e
+--- /dev/null
++++ b/lib/ui/history_screen.dart
+@@ -0,0 +1,85 @@
++import 'package:flutter/material.dart';
++import '../game/game_log.dart';
++
++/// Elenco delle partite salvate nel log (le più recenti in alto).
++class HistoryScreen extends StatefulWidget {
++  const HistoryScreen({super.key});
++  @override
++  State<HistoryScreen> createState() => _HistoryScreenState();
++}
++
++class _HistoryScreenState extends State<HistoryScreen> {
++  late Future<List<GameRecord>> _games;
++
++  @override
++  void initState() {
++    super.initState();
++    _games = GameLog.load();
++  }
++
++  static String _two(int n) => n.toString().padLeft(2, '0');
++  static String _fmt(int secs) => '${secs ~/ 60}:${_two(secs % 60)}';
++  static String _date(DateTime d) => '${_two(d.day)}/${_two(d.month)} ${_two(d.hour)}:${_two(d.minute)}';
++
++  Future<void> _confirmClear() async {
++    final ok = await showDialog<bool>(
++      context: context,
++      builder: (ctx) => AlertDialog(
++        title: const Text('Svuotare la cronologia?'),
++        content: const Text('Le partite salvate verranno cancellate.'),
++        actions: [
++          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annulla')),
++          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Svuota')),
++        ],
++      ),
++    );
++    if (ok != true) return;
++    await GameLog.clear();
++    if (!mounted) return;
++    setState(() => _games = GameLog.load());
++  }
++
++  @override
++  Widget build(BuildContext context) {
++    return Scaffold(
++      appBar: AppBar(
++        title: const Text('Partite precedenti'),
++        actions: [
++          IconButton(tooltip: 'Svuota cronologia', icon: const Icon(Icons.delete_outline), onPressed: _confirmClear),
++        ],
++      ),
++      body: FutureBuilder<List<GameRecord>>(
++        future: _games,
++        builder: (_, snap) {
++          if (!snap.hasData) return const Center(child: CircularProgressIndicator());
++          final list = snap.data!.reversed.toList();
++          if (list.isEmpty) return const Center(child: Text('Nessuna partita ancora: gioca la prima!'));
++          final best = list.map((g) => g.points).reduce((a, b) => a > b ? a : b);
++          return ListView(children: [
++            Padding(
++              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
++              child: Text(
++                '${list.length} partite · record: $best punti\n'
++                'Il registro si svuota dopo ${GameLog.maxGames} partite.',
++                style: TextStyle(color: Theme.of(context).hintColor),
++              ),
++            ),
++            for (final g in list)
++              ListTile(
++                title: Text('${g.a}  ⇄  ${g.b}', maxLines: 1, overflow: TextOverflow.ellipsis),
++                subtitle: Text('${g.moves} mosse · ${_fmt(g.seconds)} · ${_date(g.date)}'),
++                trailing: Column(
++                  mainAxisAlignment: MainAxisAlignment.center,
++                  crossAxisAlignment: CrossAxisAlignment.end,
++                  children: [
++                    Text(g.stars > 0 ? '${'★' * g.stars}${'☆' * (3 - g.stars)}' : '—'),
++                    Text('${g.points} pt', style: const TextStyle(fontWeight: FontWeight.w800)),
++                  ],
++                ),
++              ),
++          ]);
++        },
++      ),
++    );
++  }
++}
+diff --git a/lib/ui/home_screen.dart b/lib/ui/home_screen.dart
+index 73ac470..afb37c2 100644
+--- a/lib/ui/home_screen.dart
++++ b/lib/ui/home_screen.dart
+@@ -5,6 +5,7 @@ import '../game/board_state.dart';
+ import '../main.dart';
+ import '../models/models.dart';
+ import 'board_screen.dart';
++import 'history_screen.dart';
+ import 'settings_screen.dart';
+ 
+ const _famous = ['Tom Hanks', 'Meryl Streep', 'Denzel Washington', 'Al Pacino', 'Scarlett Johansson',
+@@ -22,42 +23,101 @@ class _HomeScreenState extends State<HomeScreen> {
+   final picks = <Person?>[null, null];
+   final _keys = [UniqueKey(), UniqueKey()];
+ 
++  /// Azzera i due attori scelti (e i relativi campi di testo).
++  void _reset() => setState(() {
++        picks[0] = null;
++        picks[1] = null;
++        _keys[0] = UniqueKey();
++        _keys[1] = UniqueKey();
++      });
++
++  void _swap() => setState(() {
++        final t = picks[0];
++        picks[0] = picks[1];
++        picks[1] = t;
++        _keys[0] = UniqueKey();
++        _keys[1] = UniqueKey();
++      });
++
+   Future<void> _random(int i) async {
+-    final r = await data.searchPeople(_famous[Random().nextInt(_famous.length)]);
+-    if (r.isNotEmpty) setState(() { picks[i] = r.first; _keys[i] = UniqueKey(); });
++    final other = picks[1 - i];
++    try {
++      for (var k = 0; k < 4; k++) {
++        final r = await data.searchPeople(_famous[Random().nextInt(_famous.length)]);
++        if (r.isEmpty || r.first.id == other?.id) continue;
++        if (!mounted) return;
++        setState(() {
++          picks[i] = r.first;
++          _keys[i] = UniqueKey();
++        });
++        return;
++      }
++    } catch (_) {
++      if (!mounted) return;
++      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Errore di rete, riprova')));
++    }
++  }
++
++  /// Quando si torna da una partita ("Nuova partita") i valori precedenti si azzerano.
++  Future<void> _play() async {
++    final game = BoardState(picks[0]!, picks[1]!, data);
++    final done = await Navigator.push<bool>(
++      context,
++      MaterialPageRoute<bool>(builder: (_) => BoardScreen(game)),
++    );
++    // Partita finita (anche se si esce con "indietro") o "Nuova partita": scelta azzerata.
++    if ((done == true || game.solved) && mounted) _reset();
+   }
+ 
+   @override
+   Widget build(BuildContext context) {
+     final spec = settings.spec;
+     data = makeSource(settings.source, settings.lang);
++    final ready = picks[0] != null && picks[1] != null && picks[0]!.id != picks[1]!.id;
+     return Scaffold(
+       appBar: AppBar(
+         backgroundColor: spec.bg,
+         actions: [
+           IconButton(
++            tooltip: 'Partite precedenti',
++            icon: const Icon(Icons.history),
++            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const HistoryScreen())),
++          ),
++          IconButton(
++            tooltip: 'Impostazioni',
+             icon: const Icon(Icons.settings),
+             onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SettingsScreen())),
+-          )
++          ),
+         ],
+       ),
+       body: Center(
+         child: SingleChildScrollView(
+           padding: const EdgeInsets.all(24),
+           child: Column(mainAxisSize: MainAxisSize.min, children: [
+-            Text('KINO ORACLE', style: TextStyle(fontSize: 36, fontWeight: FontWeight.w900, color: spec.accent)),
++            Row(mainAxisSize: MainAxisSize.min, children: [
++              Icon(Icons.movie_filter_rounded, size: 40, color: spec.accent),
++              const SizedBox(width: 12),
++              Text('KINO ORACLE',
++                  style: TextStyle(fontSize: 36, fontWeight: FontWeight.w900, letterSpacing: 1.5, color: spec.accent)),
++            ]),
+             const SizedBox(height: 8),
+             const Text('Scegli due attori e collegali attraverso i film'),
+             const SizedBox(height: 32),
+             Wrap(spacing: 24, runSpacing: 24, alignment: WrapAlignment.center, children: [
+               for (var i = 0; i < 2; i++) _slot(i),
+             ]),
+-            const SizedBox(height: 32),
+-            FilledButton(
+-              onPressed: picks[0] != null && picks[1] != null && picks[0]!.id != picks[1]!.id
+-                  ? () => Navigator.push(context, MaterialPageRoute(builder: (_) => BoardScreen(BoardState(picks[0]!, picks[1]!, data))))
+-                  : null,
+-              child: const Text('Gioca'),
++            const SizedBox(height: 16),
++            TextButton.icon(
++              onPressed: picks[0] != null || picks[1] != null ? _swap : null,
++              icon: const Icon(Icons.swap_horiz),
++              label: const Text('Scambia gli attori'),
++            ),
++            const SizedBox(height: 16),
++            FilledButton.icon(
++              style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 16)),
++              onPressed: ready ? _play : null,
++              icon: const Icon(Icons.play_arrow_rounded),
++              label: const Text('GIOCA', style: TextStyle(fontSize: 16, letterSpacing: 2, fontWeight: FontWeight.w800)),
+             ),
+           ]),
+         ),
+@@ -67,16 +127,44 @@ class _HomeScreenState extends State<HomeScreen> {
+ 
+   Widget _slot(int i) {
+     final p = picks[i];
++    final spec = settings.spec;
+     return SizedBox(
+       width: 260,
+       child: Column(children: [
+         Container(
+           height: 240,
+-          decoration: BoxDecoration(border: Border.all(color: settings.spec.ink, width: 3), borderRadius: BorderRadius.circular(12)),
++          decoration: BoxDecoration(
++            border: Border.all(color: spec.ink, width: 3),
++            borderRadius: BorderRadius.circular(12),
++          ),
+           clipBehavior: Clip.antiAlias,
+-          child: p?.photoUrl != null
+-              ? Image.network(p!.photoUrl!, fit: BoxFit.cover, width: double.infinity)
+-              : Center(child: Icon(Icons.person, size: 80, color: settings.spec.ink.withOpacity(.3))),
++          child: Stack(fit: StackFit.expand, children: [
++            if (p?.photoUrl != null)
++              Image.network(
++                p!.photoUrl!,
++                fit: BoxFit.cover,
++                errorBuilder: (_, __, ___) => Center(child: Icon(Icons.person, size: 80, color: spec.ink.withOpacity(.3))),
++              )
++            else
++              Center(child: Icon(Icons.person, size: 80, color: spec.ink.withOpacity(.3))),
++            if (p != null)
++              Positioned(
++                left: 0,
++                right: 0,
++                bottom: 0,
++                child: Container(
++                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
++                  color: Colors.black.withOpacity(.6),
++                  child: Text(
++                    p.name,
++                    maxLines: 1,
++                    overflow: TextOverflow.ellipsis,
++                    textAlign: TextAlign.center,
++                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
++                  ),
++                ),
++              ),
++          ]),
+         ),
+         const SizedBox(height: 8),
+         Autocomplete<Person>(
+diff --git a/lib/ui/win_overlay.dart b/lib/ui/win_overlay.dart
+new file mode 100644
+index 0000000..06804f6
+--- /dev/null
++++ b/lib/ui/win_overlay.dart
+@@ -0,0 +1,301 @@
++import 'dart:math';
++import 'package:flutter/material.dart';
++import '../game/board_state.dart';
++import '../game/game_log.dart';
++import '../game/recap.dart';
++import '../theme/kino_theme.dart';
++
++/// Schermata di vittoria: coriandoli, stelle che compaiono una alla volta,
++/// punteggio che sale, dettaglio dei punti e suggerimento per la prossima sfida.
++class WinOverlay extends StatefulWidget {
++  final BoardState state;
++  final StyleSpec spec;
++  final VoidCallback onNewGame;
++  final VoidCallback onClose;
++  final void Function(PairingHint hint) onPlayHint;
++
++  const WinOverlay({
++    super.key,
++    required this.state,
++    required this.spec,
++    required this.onNewGame,
++    required this.onClose,
++    required this.onPlayHint,
++  });
++
++  @override
++  State<WinOverlay> createState() => _WinOverlayState();
++}
++
++class _WinOverlayState extends State<WinOverlay> with SingleTickerProviderStateMixin {
++  late final AnimationController _c;
++  late final List<_Piece> _pieces;
++  PairingHint? _hint;
++  bool _hintReady = false;
++
++  @override
++  void initState() {
++    super.initState();
++    _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 5200))..forward();
++    final rnd = Random();
++    final colors = <Color>[...widget.spec.lines, widget.spec.accent, Colors.white];
++    _pieces = List.generate(90, (_) => _Piece(rnd, colors));
++    _loadHint();
++  }
++
++  Future<void> _loadHint() async {
++    var played = <String>{};
++    try {
++      played = await GameLog.playedPairs();
++    } catch (_) {
++      // senza log suggerisco comunque
++    }
++    if (!mounted) return;
++    setState(() {
++      _hint = suggestPairing(widget.state, played);
++      _hintReady = true;
++    });
++  }
++
++  @override
++  void dispose() {
++    _c.dispose();
++    super.dispose();
++  }
++
++  /// Avanzamento 0..1 di un tratto della timeline (frazioni della durata totale).
++  double _t(double from, double to, [Curve curve = Curves.easeOut]) =>
++      curve.transform(((_c.value - from) / (to - from)).clamp(0.0, 1.0).toDouble());
++
++  static String _fmt(int secs) => '${secs ~/ 60}:${(secs % 60).toString().padLeft(2, '0')}';
++
++  @override
++  Widget build(BuildContext context) {
++    return ListenableBuilder(
++      listenable: widget.state,
++      builder: (_, __) => AnimatedBuilder(
++        animation: _c,
++        builder: (_, __) {
++          final r = Recap.of(widget.state);
++          return Stack(children: [
++            Positioned.fill(
++              child: GestureDetector(
++                onTap: widget.onClose,
++                child: ColoredBox(color: Colors.black.withOpacity(0.55 * _t(0, 0.1))),
++              ),
++            ),
++            Center(
++              child: Transform.scale(
++                scale: _t(0, 0.14, Curves.easeOutBack),
++                child: Opacity(opacity: _t(0, 0.08), child: _card(r)),
++              ),
++            ),
++            Positioned.fill(
++              child: IgnorePointer(child: CustomPaint(painter: _ConfettiPainter(_pieces, _c.value))),
++            ),
++          ]);
++        },
++      ),
++    );
++  }
++
++  Widget _card(Recap r) {
++    final spec = widget.spec;
++    final s = widget.state;
++    final rows = <(String, String, bool)>[
++      ('Collegamento completato', '+${r.basePts}', false),
++      if (r.stars > 0) ('Stelle × ${r.stars}', '+${r.starPts}', false),
++      ('Bonus velocità (${_fmt(r.seconds)})', '+${r.timePts}', false),
++      if (r.extra > 0) ('Mosse oltre il minimo × ${r.extra}', '−${r.penaltyPts}', true),
++    ];
++    final note = s.minNote;
++    final tail = _t(0.62, 0.76);
++
++    return ConstrainedBox(
++      constraints: const BoxConstraints(maxWidth: 420),
++      child: Container(
++        margin: const EdgeInsets.all(16),
++        decoration: BoxDecoration(
++          color: spec.bg,
++          borderRadius: BorderRadius.circular(24),
++          border: Border.all(color: spec.ink, width: 3),
++          boxShadow: const [BoxShadow(color: Colors.black45, blurRadius: 30, offset: Offset(0, 12))],
++        ),
++        child: SingleChildScrollView(
++          padding: const EdgeInsets.fromLTRB(20, 22, 20, 12),
++          child: Column(mainAxisSize: MainAxisSize.min, children: [
++            Text('COLLEGATI!',
++                style: TextStyle(fontSize: 32, fontWeight: FontWeight.w900, letterSpacing: 2, color: spec.accent)),
++            const SizedBox(height: 4),
++            Text('${s.a.name}  ⇄  ${s.b.name}',
++                textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.w600)),
++            const SizedBox(height: 12),
++            if (r.stars > 0)
++              Row(mainAxisAlignment: MainAxisAlignment.center, children: [
++                for (var i = 0; i < 3; i++)
++                  Transform.scale(
++                    scale: _t(0.14 + 0.07 * i, 0.26 + 0.07 * i, Curves.elasticOut),
++                    child: Icon(
++                      i < r.stars ? Icons.star_rounded : Icons.star_outline_rounded,
++                      size: 48,
++                      color: i < r.stars ? const Color(0xFFFFB400) : spec.ink.withOpacity(.3),
++                    ),
++                  ),
++              ])
++            else
++              Padding(
++                padding: const EdgeInsets.symmetric(vertical: 8),
++                child: Text(
++                  s.optimalReady ? 'Percorso minimo non disponibile' : 'Calcolo il percorso minimo…',
++                  style: TextStyle(color: spec.ink.withOpacity(.6)),
++                ),
++              ),
++            const SizedBox(height: 4),
++            Text('${(r.total * _t(0.30, 0.60, Curves.easeOutCubic)).round()}',
++                style: const TextStyle(fontSize: 56, fontWeight: FontWeight.w900, height: 1.1)),
++            Text('PUNTI', style: TextStyle(letterSpacing: 4, fontWeight: FontWeight.w700, color: spec.ink.withOpacity(.6))),
++            const SizedBox(height: 12),
++            for (var i = 0; i < rows.length; i++) _row(i, rows[i]),
++            const Divider(height: 24),
++            Wrap(spacing: 8, runSpacing: 8, alignment: WrapAlignment.center, children: [
++              _pill(Icons.alt_route, '${r.moves} mosse'),
++              _pill(Icons.person, '${r.actors} attori'),
++              _pill(Icons.movie, '${r.movies} film'),
++              _pill(Icons.timer_outlined, _fmt(r.seconds)),
++            ]),
++            if (note != null) ...[
++              const SizedBox(height: 10),
++              Text(note, textAlign: TextAlign.center, style: TextStyle(color: spec.ink.withOpacity(.7))),
++            ],
++            const SizedBox(height: 14),
++            Opacity(opacity: tail, child: _suggestion()),
++            const SizedBox(height: 14),
++            Opacity(
++              opacity: tail,
++              child: SizedBox(
++                width: double.infinity,
++                child: FilledButton.icon(
++                  onPressed: widget.onNewGame,
++                  icon: const Icon(Icons.replay),
++                  label: const Text('NUOVA PARTITA'),
++                ),
++              ),
++            ),
++            Opacity(
++              opacity: tail,
++              child: TextButton(onPressed: widget.onClose, child: const Text('Guarda la mappa')),
++            ),
++          ]),
++        ),
++      ),
++    );
++  }
++
++  Widget _row(int i, (String, String, bool) row) {
++    final t = _t(0.42 + 0.06 * i, 0.54 + 0.06 * i);
++    final color = row.$3 ? widget.spec.accent : widget.spec.ink;
++    return Opacity(
++      opacity: t,
++      child: Transform.translate(
++        offset: Offset(0, 12 * (1 - t)),
++        child: Padding(
++          padding: const EdgeInsets.symmetric(vertical: 3),
++          child: Row(children: [
++            Expanded(child: Text(row.$1)),
++            Text(row.$2, style: TextStyle(fontWeight: FontWeight.w800, color: color)),
++          ]),
++        ),
++      ),
++    );
++  }
++
++  Widget _pill(IconData icon, String text) => Container(
++        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
++        decoration: BoxDecoration(
++          borderRadius: BorderRadius.circular(20),
++          border: Border.all(color: widget.spec.ink.withOpacity(.3)),
++        ),
++        child: Row(mainAxisSize: MainAxisSize.min, children: [
++          Icon(icon, size: 16),
++          const SizedBox(width: 6),
++          Text(text, style: const TextStyle(fontWeight: FontWeight.w600)),
++        ]),
++      );
++
++  Widget _suggestion() {
++    final spec = widget.spec;
++    final h = _hint;
++    if (!_hintReady) return const SizedBox.shrink();
++    if (h == null) {
++      return Text(
++        'Suggerimento: prova due attori di epoche o paesi diversi per un percorso più lungo.',
++        textAlign: TextAlign.center,
++        style: TextStyle(color: spec.ink.withOpacity(.7)),
++      );
++    }
++    return Container(
++      width: double.infinity,
++      padding: const EdgeInsets.all(12),
++      decoration: BoxDecoration(
++        borderRadius: BorderRadius.circular(14),
++        border: Border.all(color: spec.accent.withOpacity(.6), width: 2),
++      ),
++      child: Column(children: [
++        Text('PROSSIMA SFIDA',
++            style: TextStyle(fontSize: 12, letterSpacing: 3, fontWeight: FontWeight.w800, color: spec.accent)),
++        const SizedBox(height: 6),
++        Text('${h.x.name}  ⇄  ${h.y.name}',
++            textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.w800)),
++        const SizedBox(height: 4),
++        Text(
++          'Sul tavolo li separano ${h.films} film: riesci a collegarli con meno?',
++          textAlign: TextAlign.center,
++          style: TextStyle(fontSize: 13, color: spec.ink.withOpacity(.7)),
++        ),
++        const SizedBox(height: 8),
++        FilledButton.tonal(onPressed: () => widget.onPlayHint(h), child: const Text('Gioca questa sfida')),
++      ]),
++    );
++  }
++}
++
++class _Piece {
++  final double x, delay, size, sway, phase, spin, aspect;
++  final Color color;
++  _Piece(Random r, List<Color> colors)
++      : x = r.nextDouble(),
++        delay = r.nextDouble() * 0.45,
++        size = 6 + r.nextDouble() * 8,
++        sway = 10 + r.nextDouble() * 30,
++        phase = r.nextDouble() * 6.28,
++        spin = (r.nextDouble() - 0.5) * 20,
++        aspect = 0.4 + r.nextDouble() * 0.6,
++        color = colors[r.nextInt(colors.length)];
++}
++
++class _ConfettiPainter extends CustomPainter {
++  final List<_Piece> pieces;
++  final double t;
++  _ConfettiPainter(this.pieces, this.t);
++
++  @override
++  void paint(Canvas c, Size size) {
++    for (final p in pieces) {
++      final prog = (t - p.delay) / (1 - p.delay);
++      if (prog <= 0 || prog >= 1) continue;
++      final y = -20 + (size.height + 40) * prog;
++      final x = p.x * size.width + sin(prog * 8 + p.phase) * p.sway;
++      c.save();
++      c.translate(x, y);
++      c.rotate(prog * p.spin);
++      c.drawRect(
++        Rect.fromCenter(center: Offset.zero, width: p.size, height: p.size * p.aspect),
++        Paint()..color = p.color,
++      );
++      c.restore();
++    }
++  }
++
++  @override
++  bool shouldRepaint(covariant _ConfettiPainter old) => old.t != t;
++}
+diff --git a/test/widget_test.dart b/test/widget_test.dart
+index b2db593..ba35cfe 100644
+--- a/test/widget_test.dart
++++ b/test/widget_test.dart
+@@ -1,30 +1,64 @@
+-// This is a basic Flutter widget test.
+-//
+-// To perform an interaction with a widget in your test, use the WidgetTester
+-// utility in the flutter_test package. For example, you can send tap and scroll
+-// gestures. You can also use WidgetTester to find child widgets in the widget
+-// tree, read text, and verify that the values of widget properties are correct.
+-
+-import 'package:flutter/material.dart';
+-import 'package:flutter_test/flutter_test.dart';
+-
+-import 'package:kino_oracle/main.dart';
+-
+-void main() {
+-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
+-    // Build our app and trigger a frame.
+-    await tester.pumpWidget(const MyApp());
+-
+-    // Verify that our counter starts at 0.
+-    expect(find.text('0'), findsOneWidget);
+-    expect(find.text('1'), findsNothing);
+-
+-    // Tap the '+' icon and trigger a frame.
+-    await tester.tap(find.byIcon(Icons.add));
+-    await tester.pump();
+-
+-    // Verify that our counter has incremented.
+-    expect(find.text('0'), findsNothing);
+-    expect(find.text('1'), findsOneWidget);
+-  });
+-}
++import 'package:flutter_test/flutter_test.dart';
++import 'package:kino_oracle/game/game_log.dart';
++import 'package:kino_oracle/game/recap.dart';
++import 'package:kino_oracle/main.dart';
++import 'package:shared_preferences/shared_preferences.dart';
++
++GameRecord _rec(int i) => GameRecord(
++      date: DateTime(2026, 1, 1),
++      a: 'A$i',
++      b: 'B$i',
++      moves: 3,
++      stars: 3,
++      points: 1000 + i,
++      seconds: 30,
++    );
++
++void main() {
++  setUp(() => SharedPreferences.setMockInitialValues({}));
++
++  test('il log si svuota quando arriva la partita successiva alla 25-esima', () async {
++    for (var i = 0; i < GameLog.maxGames; i++) {
++      await GameLog.add(_rec(i));
++    }
++    expect((await GameLog.load()).length, GameLog.maxGames);
++
++    await GameLog.add(_rec(99));
++    final after = await GameLog.load();
++    expect(after.length, 1);
++    expect(after.single.a, 'A99');
++  });
++
++  test('clear() azzera il log', () async {
++    await GameLog.add(_rec(1));
++    await GameLog.clear();
++    expect(await GameLog.load(), isEmpty);
++  });
++
++  test('la chiave della coppia non dipende da ordine e maiuscole', () {
++    expect(pairKey('Tom Hanks', 'Meryl Streep'), pairKey('meryl streep', 'TOM HANKS'));
++  });
++
++  test('i punti della partita si sommano come da recap', () {
++    const r = Recap(
++      stars: 3,
++      moves: 3,
++      actors: 3,
++      movies: 2,
++      seconds: 60,
++      extra: 0,
++      basePts: Recap.base,
++      starPts: 3 * Recap.perStar,
++      timePts: Recap.timeBudget - 60,
++      penaltyPts: 0,
++    );
++    expect(r.total, 500 + 600 + 240);
++  });
++
++  testWidgets('la home si avvia', (tester) async {
++    await settings.load();
++    await tester.pumpWidget(const KinoApp());
++    expect(find.text('KINO ORACLE'), findsOneWidget);
++    expect(find.text('GIOCA'), findsOneWidget);
++  });
++}

@@ -1,0 +1,121 @@
+name: Release
+
+# Si avvia quando crei un tag tipo v0.2.0 (git tag v0.2.0 && git push origin v0.2.0),
+# oppure a mano dalla scheda Actions. Con il tag pubblica anche la Release su GitHub.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    env:
+      KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Versione
+        id: ver
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then V="${GITHUB_REF_NAME#v}"; else V=$(grep '^version:' pubspec.yaml | sed 's/version: *//; s/+.*//'); fi
+          echo "name=$V" >> "$GITHUB_OUTPUT"
+
+      # Senza chiave di firma l'APK usa la chiave di debug e NON si potrà aggiornare
+      # sopra una versione precedente: configura i secret (vedi docs/RILASCI.md).
+      - name: Chiave di firma
+        if: env.KEYSTORE_B64 != ''
+        run: |
+          echo "$KEYSTORE_B64" | base64 -d > android/app/upload-keystore.jks
+          cat > android/key.properties <<EOF2
+          storeFile=upload-keystore.jks
+          storePassword=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}
+          keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}
+          EOF2
+
+      - run: flutter pub get
+      - name: Compila APK
+        run: >
+          flutter build apk --release
+          --build-name=${{ steps.ver.outputs.name }}
+          --build-number=${{ github.run_number }}
+          --dart-define=TMDB_TOKEN=${{ secrets.TMDB_TOKEN }}
+      - name: Rinomina
+        run: |
+          mkdir dist
+          cp build/app/outputs/flutter-apk/app-release.apk "dist/KinoOracle-${{ steps.ver.outputs.name }}.apk"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android
+          path: dist/*
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Versione
+        id: ver
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then V="${GITHUB_REF_NAME#v}"; else V=$(grep '^version:' pubspec.yaml | sed 's/version: *//; s/+.*//'); fi
+          echo "name=$V" >> "$GITHUB_OUTPUT"
+
+      - run: flutter pub get
+      - name: Compila Windows
+        shell: bash
+        run: >
+          flutter build windows --release
+          --build-name=${{ steps.ver.outputs.name }}
+          --build-number=${{ github.run_number }}
+          --dart-define=TMDB_TOKEN=${{ secrets.TMDB_TOKEN }}
+
+      - name: Zip portatile
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath "dist\KinoOracle-windows-${{ steps.ver.outputs.name }}.zip"
+
+      # Installer singolo .exe (Inno Setup). Se fallisce, resta comunque lo zip.
+      - name: Installer .exe
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          choco install innosetup -y --no-progress
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DAppVersion=${{ steps.ver.outputs.name }}" installer\kino_oracle.iss
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: dist/*
+
+  release:
+    needs: [android, windows]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true

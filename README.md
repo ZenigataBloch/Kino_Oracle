@@ -14,8 +14,11 @@ flutter run -d chrome --dart-define=TMDB_TOKEN=LA_TUA_CHIAVE
 Senza `--dart-define` l'app usa Wikidata. La chiave TMDB puo essere il "Read Access Token" (v4) o la "API Key" (v3).
 **Non scrivere mai la chiave nel codice e non committarla su GitHub.**
 
-Su Android aggiungi in android/app/src/main/AndroidManifest.xml:
-`<uses-permission android:name="android.permission.INTERNET"/>`
+Il permesso INTERNET per Android è già nel manifest.
+
+## Rilasci (APK e exe)
+Creando un tag `vX.Y.Z` GitHub Actions compila APK e installer Windows e li pubblica nelle Releases.
+Dettagli, secret e piano aggiornamenti: [docs/RILASCI.md](docs/RILASCI.md).
 
 ## Crediti (da mostrare nell'app)
 - TMDB: "This product uses the TMDB API but is not endorsed or certified by TMDB." + logo TMDB.
