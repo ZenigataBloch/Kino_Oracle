@@ -82,7 +82,7 @@ class _WinOverlayState extends State<WinOverlay> with SingleTickerProviderStateM
             Positioned.fill(
               child: GestureDetector(
                 onTap: widget.onClose,
-                child: ColoredBox(color: Colors.black.withOpacity(0.55 * _t(0, 0.1))),
+                child: ColoredBox(color: Colors.black.withValues(alpha: 0.55 * _t(0, 0.1))),
               ),
             ),
             Center(
@@ -141,7 +141,7 @@ class _WinOverlayState extends State<WinOverlay> with SingleTickerProviderStateM
                     child: Icon(
                       i < r.stars ? Icons.star_rounded : Icons.star_outline_rounded,
                       size: 48,
-                      color: i < r.stars ? const Color(0xFFFFB400) : spec.ink.withOpacity(.3),
+                      color: i < r.stars ? const Color(0xFFFFB400) : spec.ink.withValues(alpha: .3),
                     ),
                   ),
               ])
@@ -150,13 +150,13 @@ class _WinOverlayState extends State<WinOverlay> with SingleTickerProviderStateM
                 padding: const EdgeInsets.symmetric(vertical: 8),
                 child: Text(
                   s.optimalReady ? 'Percorso minimo non disponibile' : 'Calcolo il percorso minimo…',
-                  style: TextStyle(color: spec.ink.withOpacity(.6)),
+                  style: TextStyle(color: spec.ink.withValues(alpha: .6)),
                 ),
               ),
             const SizedBox(height: 4),
             Text('${(r.total * _t(0.30, 0.60, Curves.easeOutCubic)).round()}',
                 style: const TextStyle(fontSize: 56, fontWeight: FontWeight.w900, height: 1.1)),
-            Text('PUNTI', style: TextStyle(letterSpacing: 4, fontWeight: FontWeight.w700, color: spec.ink.withOpacity(.6))),
+            Text('PUNTI', style: TextStyle(letterSpacing: 4, fontWeight: FontWeight.w700, color: spec.ink.withValues(alpha: .6))),
             const SizedBox(height: 12),
             for (var i = 0; i < rows.length; i++) _row(i, rows[i]),
             const Divider(height: 24),
@@ -168,7 +168,7 @@ class _WinOverlayState extends State<WinOverlay> with SingleTickerProviderStateM
             ]),
             if (note != null) ...[
               const SizedBox(height: 10),
-              Text(note, textAlign: TextAlign.center, style: TextStyle(color: spec.ink.withOpacity(.7))),
+              Text(note, textAlign: TextAlign.center, style: TextStyle(color: spec.ink.withValues(alpha: .7))),
             ],
             const SizedBox(height: 14),
             Opacity(opacity: tail, child: _suggestion()),
@@ -238,7 +238,7 @@ class _WinOverlayState extends State<WinOverlay> with SingleTickerProviderStateM
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: widget.spec.ink.withOpacity(.3)),
+          border: Border.all(color: widget.spec.ink.withValues(alpha: .3)),
         ),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
           Icon(icon, size: 16),
@@ -255,7 +255,7 @@ class _WinOverlayState extends State<WinOverlay> with SingleTickerProviderStateM
       return Text(
         'Suggerimento: prova due attori di epoche o paesi diversi per un percorso più lungo.',
         textAlign: TextAlign.center,
-        style: TextStyle(color: spec.ink.withOpacity(.7)),
+        style: TextStyle(color: spec.ink.withValues(alpha: .7)),
       );
     }
     return Container(
@@ -263,7 +263,7 @@ class _WinOverlayState extends State<WinOverlay> with SingleTickerProviderStateM
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(spec.radius + 2),
-        border: Border.all(color: spec.accent.withOpacity(.6), width: 2),
+        border: Border.all(color: spec.accent.withValues(alpha: .6), width: 2),
       ),
       child: Column(children: [
         Text('PROSSIMA SFIDA',
@@ -275,7 +275,7 @@ class _WinOverlayState extends State<WinOverlay> with SingleTickerProviderStateM
         Text(
           'Sul tavolo li separano ${h.films} film: riesci a collegarli con meno?',
           textAlign: TextAlign.center,
-          style: TextStyle(fontSize: 13, color: spec.ink.withOpacity(.7)),
+          style: TextStyle(fontSize: 13, color: spec.ink.withValues(alpha: .7)),
         ),
         const SizedBox(height: 8),
         FilledButton.tonal(onPressed: () => widget.onPlayHint(h), child: const Text('Gioca questa sfida')),
