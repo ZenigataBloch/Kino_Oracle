@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../data/data_source.dart';
+import '../data/tmdb.dart';
 import '../game/board_state.dart';
 import '../main.dart';
 import '../models/models.dart';
@@ -16,9 +17,27 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  DataSource data = makeSource(settings.lang, settings.tmdbKey);
+  late DataSource data = _makeData();
+  String _dataSig = _signature();
   final picks = <Person?>[null, null];
   final _keys = [UniqueKey(), UniqueKey()];
+
+  /// Firma delle impostazioni che influenzano i dati: se cambia, si ricrea la sorgente.
+  static String _signature() {
+    final langs = settings.excludedLanguages.toList()..sort();
+    return '${settings.lang}|${settings.tmdbKey}|${langs.join(',')}';
+  }
+
+  DataSource _makeData() =>
+      Tmdb(settings.lang, settings.tmdbKey, excludedLanguages: settings.excludedLanguages);
+
+  /// Ricrea la sorgente solo se lingua, chiave o filtri sono cambiati (cosi la cache resta).
+  void _syncData() {
+    final sig = _signature();
+    if (sig == _dataSig) return;
+    _dataSig = sig;
+    data = _makeData();
+  }
 
   @override
   void initState() {
@@ -85,7 +104,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _page(BuildContext context) {
     final spec = settings.spec;
-    data = makeSource(settings.lang, settings.tmdbKey);
+    _syncData();
     final ready = settings.hasKey && picks[0] != null && picks[1] != null && picks[0]!.id != picks[1]!.id;
     return Scaffold(
       appBar: AppBar(

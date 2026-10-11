@@ -10,10 +10,24 @@ class Tmdb implements DataSource {
   static const _base = 'https://api.themoviedb.org/3';
   final String lang;
   final String _key;
-  Tmdb(this.lang, this._key);
+
+  /// Lingue originali dei film da escludere (vedi regions.dart).
+  final Set<String> excludedLanguages;
+  Tmdb(this.lang, this._key, {this.excludedLanguages = const {}});
 
   final _movieCast = <int, Set<int>>{};
   final _personMovies = <int, Set<int>>{};
+
+  bool _movieOk(dynamic m) => !excludedLanguages.contains(m['original_language']);
+
+  /// Esclude una persona se più della metà dei titoli per cui è nota è in lingue escluse.
+  bool _personOk(dynamic p) {
+    if (excludedLanguages.isEmpty) return true;
+    final known = (p['known_for'] as List?) ?? const [];
+    if (known.isEmpty) return true;
+    final bad = known.where((k) => excludedLanguages.contains(k['original_language'])).length;
+    return bad * 2 <= known.length;
+  }
 
   Future<Map<String, dynamic>> _get(String path, [Map<String, String> q = const {}]) async {
     final bearer = _key.startsWith('eyJ');
@@ -28,30 +42,32 @@ class Tmdb implements DataSource {
     return jsonDecode(r.body) as Map<String, dynamic>;
   }
 
+  Person _toPerson(dynamic p) => Person(p['id'], p['name'],
+      p['profile_path'] == null ? null : 'https://image.tmdb.org/t/p/w342${p['profile_path']}', null);
+
   @override
   Future<List<Person>> searchPeople(String q) async {
     final j = await _get('/search/person', {'query': q});
     return [
       for (final p in j['results'] as List)
-        if (p['known_for_department'] == 'Acting')
-          Person(p['id'], p['name'],
-              p['profile_path'] == null ? null : 'https://image.tmdb.org/t/p/w342${p['profile_path']}', null)
+        if (p['known_for_department'] == 'Acting' && _personOk(p)) _toPerson(p)
     ];
   }
 
   /// Un attore a caso tra i più popolari (25 pagine da 20 = circa 500 persone).
+  /// Se il filtro svuota la pagina, riprova su un'altra.
   @override
   Future<Person?> randomPerson() async {
     final rnd = Random();
-    final j = await _get('/person/popular', {'page': '${1 + rnd.nextInt(25)}'});
-    final actors = [
-      for (final p in j['results'] as List)
-        if (p['known_for_department'] == 'Acting') p
-    ];
-    if (actors.isEmpty) return null;
-    final p = actors[rnd.nextInt(actors.length)];
-    return Person(p['id'], p['name'],
-        p['profile_path'] == null ? null : 'https://image.tmdb.org/t/p/w342${p['profile_path']}', null);
+    for (var attempt = 0; attempt < 4; attempt++) {
+      final j = await _get('/person/popular', {'page': '${1 + rnd.nextInt(25)}'});
+      final actors = [
+        for (final p in j['results'] as List)
+          if (p['known_for_department'] == 'Acting' && _personOk(p)) p
+      ];
+      if (actors.isNotEmpty) return _toPerson(actors[rnd.nextInt(actors.length)]);
+    }
+    return null;
   }
 
   @override
@@ -59,9 +75,10 @@ class Tmdb implements DataSource {
     final j = await _get('/search/movie', {'query': q});
     return [
       for (final m in j['results'] as List)
-        Movie(m['id'], m['title'],
-            ((m['release_date'] ?? '') as String).length >= 4 ? (m['release_date'] as String).substring(0, 4) : null,
-            m['poster_path'] == null ? null : 'https://image.tmdb.org/t/p/w342${m['poster_path']}')
+        if (_movieOk(m))
+          Movie(m['id'], m['title'],
+              ((m['release_date'] ?? '') as String).length >= 4 ? (m['release_date'] as String).substring(0, 4) : null,
+              m['poster_path'] == null ? null : 'https://image.tmdb.org/t/p/w342${m['poster_path']}')
     ];
   }
 
@@ -74,6 +91,7 @@ class Tmdb implements DataSource {
   @override
   Future<Set<int>> personMovieIds(int personId) async =>
       _personMovies[personId] ??= ((await _get('/person/$personId/movie_credits'))['cast'] as List)
+          .where(_movieOk)
           .map<int>((c) => c['id'] as int)
           .toSet();
 }

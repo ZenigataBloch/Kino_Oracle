@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../data/regions.dart';
 import '../main.dart';
 import '../theme/kino_theme.dart';
 
@@ -39,6 +40,25 @@ class SettingsScreen extends StatelessWidget {
               value: settings.noSeries,
               onChanged: (v) => settings.update(noSeries: v),
             ),
+            const Divider(),
+            const ListTile(
+              title: Text('Cinematografie da escludere'),
+              subtitle: Text(
+                'Esclude i film in queste lingue originali e gli attori noti soprattutto per quei film. '
+                'Un attore asiatico in un film americano resta giocabile.',
+              ),
+            ),
+            for (final r in Region.values)
+              SwitchListTile(
+                title: Text(r.label),
+                value: settings.excludedRegions.contains(r.name),
+                onChanged: (on) {
+                  final s = {...settings.excludedRegions};
+                  on ? s.add(r.name) : s.remove(r.name);
+                  settings.update(excludedRegions: s);
+                },
+              ),
+            const Divider(),
             ListTile(
               title: const Text('Lingua dati'),
               trailing: DropdownButton<String>(

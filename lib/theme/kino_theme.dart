@@ -1,6 +1,7 @@
 import 'dart:ui' show PlatformDispatcher;
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../data/regions.dart';
 
 enum KinoStyle { metro, investigation, cinema }
 
@@ -74,6 +75,15 @@ class AppSettings extends ChangeNotifier {
   bool noSeries = false;
   String lang = 'it-IT';
 
+  /// Nomi delle [Region] escluse (es. 'southAsia', 'eastAsia').
+  Set<String> excludedRegions = {};
+
+  /// Codici lingua originali da escludere, derivati dalle regioni scelte.
+  Set<String> get excludedLanguages => {
+        for (final r in Region.values)
+          if (excludedRegions.contains(r.name)) ...r.languages
+      };
+
   /// Chiave TMDB inserita nelle Impostazioni (salvata sul telefono).
   String tmdbToken = '';
   static const _buildKey = String.fromEnvironment('TMDB_TOKEN');
@@ -101,20 +111,30 @@ class AppSettings extends ChangeNotifier {
     noSeries = p.getBool('noSeries') ?? false;
     lang = p.getString('lang') ?? 'it-IT';
     tmdbToken = p.getString('tmdbToken') ?? '';
+    excludedRegions = (p.getStringList('excludedRegions') ?? const <String>[]).toSet();
   }
 
-  Future<void> update({KinoStyle? style, Appearance? appearance, bool? noSeries, String? lang, String? tmdbToken}) async {
+  Future<void> update({
+    KinoStyle? style,
+    Appearance? appearance,
+    bool? noSeries,
+    String? lang,
+    String? tmdbToken,
+    Set<String>? excludedRegions,
+  }) async {
     this.style = style ?? this.style;
     this.appearance = appearance ?? this.appearance;
     this.noSeries = noSeries ?? this.noSeries;
     this.lang = lang ?? this.lang;
     this.tmdbToken = tmdbToken ?? this.tmdbToken;
+    this.excludedRegions = excludedRegions ?? this.excludedRegions;
     final p = await SharedPreferences.getInstance();
     await p.setString('style', this.style.name);
     await p.setString('appearance', this.appearance.name);
     await p.setBool('noSeries', this.noSeries);
     await p.setString('lang', this.lang);
     await p.setString('tmdbToken', this.tmdbToken);
+    await p.setStringList('excludedRegions', this.excludedRegions.toList());
     notifyListeners();
   }
 }
