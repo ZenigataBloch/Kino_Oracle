@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../game/board_state.dart';
 import '../game/game_log.dart';
 import '../game/recap.dart';
+import '../theme/kino_look.dart';
 import '../theme/kino_theme.dart';
 
 /// Schermata di vittoria: coriandoli, stelle che compaiono una alla volta,
@@ -117,13 +118,15 @@ class _WinOverlayState extends State<WinOverlay> with SingleTickerProviderStateM
         margin: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: spec.bg,
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: BorderRadius.circular(spec.radius + 10),
           border: Border.all(color: spec.ink, width: 3),
           boxShadow: const [BoxShadow(color: Colors.black45, blurRadius: 30, offset: Offset(0, 12))],
         ),
         child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(20, 22, 20, 12),
           child: Column(mainAxisSize: MainAxisSize.min, children: [
+            if (spec.label == 'Cinema') _bulbs(),
+            if (spec.label == 'Bacheca') const _PinDot(),
             Text('COLLEGATI!',
                 style: TextStyle(fontSize: 32, fontWeight: FontWeight.w900, letterSpacing: 2, color: spec.accent)),
             const SizedBox(height: 4),
@@ -191,6 +194,28 @@ class _WinOverlayState extends State<WinOverlay> with SingleTickerProviderStateM
     );
   }
 
+  /// Fila di lampadine che si accendono a turno (solo stile Cinema).
+  Widget _bulbs() {
+    final gold = widget.spec.lines.last;
+    final phase = (_c.value * 8).floor().isEven;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+        for (var i = 0; i < 9; i++)
+          Container(
+            width: 8,
+            height: 8,
+            margin: const EdgeInsets.symmetric(horizontal: 5),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: gold.withValues(alpha: i.isEven == phase ? 1 : .4),
+              boxShadow: [BoxShadow(color: gold.withValues(alpha: i.isEven == phase ? .7 : 0), blurRadius: 6)],
+            ),
+          ),
+      ]),
+    );
+  }
+
   Widget _row(int i, (String, String, bool) row) {
     final t = _t(0.42 + 0.06 * i, 0.54 + 0.06 * i);
     final color = row.$3 ? widget.spec.accent : widget.spec.ink;
@@ -237,7 +262,7 @@ class _WinOverlayState extends State<WinOverlay> with SingleTickerProviderStateM
       width: double.infinity,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(spec.radius + 2),
         border: Border.all(color: spec.accent.withOpacity(.6), width: 2),
       ),
       child: Column(children: [
@@ -255,6 +280,31 @@ class _WinOverlayState extends State<WinOverlay> with SingleTickerProviderStateM
         const SizedBox(height: 8),
         FilledButton.tonal(onPressed: () => widget.onPlayHint(h), child: const Text('Gioca questa sfida')),
       ]),
+    );
+  }
+}
+
+/// Puntina in cima alla scheda (solo stile Bacheca).
+class _PinDot extends StatelessWidget {
+  const _PinDot();
+
+  @override
+  Widget build(BuildContext context) {
+    final color = Theme.of(context).colorScheme.primary;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Container(
+        width: 18,
+        height: 18,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          gradient: RadialGradient(
+            center: const Alignment(-.4, -.4),
+            colors: [Color.alphaBlend(Colors.white.withValues(alpha: .55), color), color],
+          ),
+          boxShadow: const [BoxShadow(color: Color(0x66000000), blurRadius: 3, offset: Offset(1, 2))],
+        ),
+      ),
     );
   }
 }

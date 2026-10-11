@@ -4,6 +4,7 @@ import '../data/tmdb.dart';
 import '../game/board_state.dart';
 import '../main.dart';
 import '../models/models.dart';
+import '../theme/kino_look.dart';
 import '../theme/kino_theme.dart';
 import '../update/updater.dart';
 import 'board_screen.dart';
@@ -133,7 +134,11 @@ class _HomeScreenState extends State<HomeScreen> {
                   style: TextStyle(fontSize: 36, fontWeight: FontWeight.w900, letterSpacing: 1.5, color: spec.accent)),
             ]),
             const SizedBox(height: 8),
-            const Text('Scegli due attori e collegali attraverso i film'),
+            Text(
+              'Scegli due attori e collegali attraverso i film',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: spec.ink.withValues(alpha: .75)),
+            ),
             if (!settings.hasKey) _keyBanner(spec),
             const SizedBox(height: 32),
             Wrap(spacing: 24, runSpacing: 24, alignment: WrapAlignment.center, children: [
@@ -164,9 +169,9 @@ class _HomeScreenState extends State<HomeScreen> {
         margin: const EdgeInsets.only(top: 20),
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: spec.accent.withOpacity(.12),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: spec.accent.withOpacity(.4)),
+          color: spec.accent.withValues(alpha: .12),
+          borderRadius: BorderRadius.circular(spec.radius),
+          border: Border.all(color: spec.accent.withValues(alpha: .4)),
         ),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           const Text('Per giocare serve una chiave TMDB (gratuita).', textAlign: TextAlign.center),
@@ -184,11 +189,17 @@ class _HomeScreenState extends State<HomeScreen> {
     return SizedBox(
       width: 260,
       child: Column(children: [
-        Container(
+        // Riquadro dell'attore: bordo e ombra con l'accento quando e stato scelto.
+        AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
           height: 240,
           decoration: BoxDecoration(
-            border: Border.all(color: spec.ink, width: 3),
-            borderRadius: BorderRadius.circular(12),
+            color: spec.surface,
+            border: Border.all(color: p != null ? spec.accent : spec.ink.withValues(alpha: .5), width: 3),
+            borderRadius: BorderRadius.circular(spec.radius),
+            boxShadow: p != null
+                ? [BoxShadow(color: spec.accent.withValues(alpha: .25), blurRadius: 16, offset: const Offset(0, 6))]
+                : null,
           ),
           clipBehavior: Clip.antiAlias,
           child: Stack(fit: StackFit.expand, children: [
@@ -196,10 +207,11 @@ class _HomeScreenState extends State<HomeScreen> {
               Image.network(
                 p!.photoUrl!,
                 fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => Center(child: Icon(Icons.person, size: 80, color: spec.ink.withOpacity(.3))),
+                errorBuilder: (_, __, ___) =>
+                    Center(child: Icon(Icons.person, size: 80, color: spec.ink.withValues(alpha: .3))),
               )
             else
-              Center(child: Icon(Icons.person, size: 80, color: spec.ink.withOpacity(.3))),
+              Center(child: Icon(Icons.person, size: 80, color: spec.ink.withValues(alpha: .3))),
             if (p != null)
               Positioned(
                 left: 0,
@@ -207,7 +219,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 bottom: 0,
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                  color: Colors.black.withOpacity(.6),
+                  color: Colors.black.withValues(alpha: .6),
                   child: Text(
                     p.name,
                     maxLines: 1,
@@ -229,7 +241,7 @@ class _HomeScreenState extends State<HomeScreen> {
           fieldViewBuilder: (_, ctl, focus, submit) => TextField(
             controller: ctl,
             focusNode: focus,
-            decoration: InputDecoration(labelText: 'Attore ${i + 1}', border: const OutlineInputBorder()),
+            decoration: InputDecoration(labelText: 'Attore ${i + 1}'),
           ),
         ),
         TextButton(onPressed: settings.hasKey ? () => _random(i) : null, child: const Text('Scegli per me')),

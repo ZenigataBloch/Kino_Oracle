@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../data/regions.dart';
 import '../main.dart';
-import '../theme/kino_theme.dart';
+import 'style_picker.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -11,42 +11,21 @@ class SettingsScreen extends StatelessWidget {
         builder: (_, __) => Scaffold(
           appBar: AppBar(title: const Text('Impostazioni')),
           body: ListView(children: [
-            const ListTile(title: Text('Stile grafico')),
-            for (final k in KinoStyle.values)
-              RadioListTile<KinoStyle>(
-                value: k,
-                groupValue: settings.style,
-                title: Text(specs[k]!.label),
-                onChanged: (v) => settings.update(style: v),
-              ),
-            const Divider(),
-            const ListTile(title: Text('Aspetto')),
-            for (final (a, label) in const [
-              (Appearance.system, 'Sistema'),
-              (Appearance.light, 'Chiaro'),
-              (Appearance.dark, 'Scuro'),
-              (Appearance.amoled, 'Scuro AMOLED (nero puro)'),
-            ])
-              RadioListTile<Appearance>(
-                value: a,
-                groupValue: settings.appearance,
-                title: Text(label),
-                onChanged: (v) => settings.update(appearance: v),
-              ),
-            const Divider(),
+            const _Header('Stile grafico'),
+            const StylePicker(),
+            const _Header('Aspetto'),
+            const AppearancePicker(),
+            const _Header('Partita'),
             SwitchListTile(
               title: const Text('Vieta film della stessa serie'),
               subtitle: const Text('Non ancora implementato'),
               value: settings.noSeries,
               onChanged: (v) => settings.update(noSeries: v),
             ),
-            const Divider(),
-            const ListTile(
-              title: Text('Cinematografie da escludere'),
-              subtitle: Text(
-                'Esclude i film in queste lingue originali e gli attori noti soprattutto per quei film. '
-                'Un attore asiatico in un film americano resta giocabile.',
-              ),
+            const _Header(
+              'Cinematografie da escludere',
+              subtitle: 'Esclude i film in queste lingue originali e gli attori noti soprattutto per quei film. '
+                  'Un attore asiatico in un film americano resta giocabile.',
             ),
             for (final r in Region.values)
               SwitchListTile(
@@ -58,7 +37,7 @@ class SettingsScreen extends StatelessWidget {
                   settings.update(excludedRegions: s);
                 },
               ),
-            const Divider(),
+            const _Header('Dati'),
             ListTile(
               title: const Text('Lingua dati'),
               trailing: DropdownButton<String>(
@@ -70,8 +49,7 @@ class SettingsScreen extends StatelessWidget {
                 onChanged: (v) => settings.update(lang: v),
               ),
             ),
-            const Divider(),
-            const ListTile(title: Text('Chiave TMDB')),
+            const _Header('Chiave TMDB'),
             const _TokenTile(),
             const Padding(
               padding: EdgeInsets.fromLTRB(16, 8, 16, 24),
@@ -83,6 +61,31 @@ class SettingsScreen extends StatelessWidget {
           ]),
         ),
       );
+}
+
+/// Intestazione di sezione: titolo in maiuscolo con il colore dell'accento.
+class _Header extends StatelessWidget {
+  final String title;
+  final String? subtitle;
+  const _Header(this.title, {this.subtitle});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(
+          title.toUpperCase(),
+          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, letterSpacing: 1.4, color: scheme.primary),
+        ),
+        if (subtitle != null) ...[
+          const SizedBox(height: 6),
+          Text(subtitle!, style: TextStyle(fontSize: 13, color: scheme.onSurface.withValues(alpha: .7))),
+        ],
+      ]),
+    );
+  }
 }
 
 /// Campo per incollare la chiave TMDB: "Read Access Token" (v4, inizia con eyJ) o "API Key" (v3).
@@ -124,7 +127,6 @@ class _TokenTileState extends State<_TokenTile> {
               labelText: 'Read Access Token o API Key',
               helperText: 'Gratis su themoviedb.org: Impostazioni > API',
               helperMaxLines: 2,
-              border: const OutlineInputBorder(),
               suffixIcon: IconButton(
                 tooltip: _hide ? 'Mostra' : 'Nascondi',
                 icon: Icon(_hide ? Icons.visibility : Icons.visibility_off),

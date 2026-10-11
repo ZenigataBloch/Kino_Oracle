@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'theme/kino_look.dart';
 import 'theme/kino_theme.dart';
 import 'ui/home_screen.dart';
 
@@ -43,7 +44,7 @@ class _KinoAppState extends State<KinoApp> with WidgetsBindingObserver {
         listenable: settings,
         builder: (_, __) {
           final spec = settings.spec;
-          final theme = spec.materialTheme;
+          final theme = spec.theme;
           final darkBg = theme.brightness == Brightness.dark;
           final iconBrightness = darkBg ? Brightness.light : Brightness.dark;
           return MaterialApp(

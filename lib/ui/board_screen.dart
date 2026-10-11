@@ -6,6 +6,7 @@ import '../game/game_log.dart';
 import '../game/recap.dart';
 import '../main.dart';
 import '../models/models.dart';
+import '../theme/kino_look.dart';
 import '../theme/kino_theme.dart';
 import 'map_nodes.dart';
 import 'metro_painter.dart';
@@ -155,9 +156,12 @@ class _BoardScreenState extends State<BoardScreen> {
             Padding(
               padding: const EdgeInsets.only(right: 12),
               child: Chip(
-                avatar: const Icon(Icons.alt_route, size: 18),
+                avatar: Icon(Icons.alt_route, size: 18, color: spec.accent),
                 label: Text('Mosse: ${s.moves}'),
                 visualDensity: VisualDensity.compact,
+                backgroundColor: spec.surface,
+                side: BorderSide(color: spec.ink.withValues(alpha: .2)),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(spec.radius)),
               ),
             ),
           ],
@@ -179,9 +183,9 @@ class _BoardScreenState extends State<BoardScreen> {
                 margin: const EdgeInsets.fromLTRB(8, 4, 8, 0),
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 decoration: BoxDecoration(
-                  color: spec.accent.withOpacity(.12),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: spec.accent.withOpacity(.4)),
+                  color: spec.accent.withValues(alpha: .12),
+                  borderRadius: BorderRadius.circular(spec.radius),
+                  border: Border.all(color: spec.accent.withValues(alpha: .4)),
                 ),
                 child: Row(children: [
                   Icon(Icons.info_outline, size: 18, color: spec.accent),
@@ -278,6 +282,7 @@ class _BoardScreenState extends State<BoardScreen> {
   }
 
   Widget _inputRow() {
+    final spec = settings.spec;
     return Row(children: [
       Expanded(
         child: Autocomplete<Suggestion>(
@@ -292,11 +297,9 @@ class _BoardScreenState extends State<BoardScreen> {
               focusNode: focus,
               enabled: !s.busy && !s.solved,
               onSubmitted: (_) => _hasOptions ? submit() : _addText(),
-              decoration: InputDecoration(
+              decoration: const InputDecoration(
                 hintText: 'Film o attore collegato a qualcosa sul tavolo…',
-                prefixIcon: const Icon(Icons.search),
-                filled: true,
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+                prefixIcon: Icon(Icons.search),
               ),
             );
           },
@@ -304,7 +307,8 @@ class _BoardScreenState extends State<BoardScreen> {
             alignment: Alignment.bottomLeft,
             child: Material(
               elevation: 4,
-              borderRadius: BorderRadius.circular(12),
+              color: spec.surface,
+              borderRadius: BorderRadius.circular(spec.radius),
               clipBehavior: Clip.antiAlias,
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxHeight: 360, maxWidth: 460),
