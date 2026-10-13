@@ -73,6 +73,21 @@ class AppSettings extends ChangeNotifier {
   KinoStyle style = KinoStyle.metro;
   Appearance appearance = Appearance.system;
   bool noSeries = false;
+
+  /// Cosa si può collegare: 'movie' (film), 'tv' (serie) o 'both'.
+  String mediaMode = 'movie';
+
+  /// Modalità a tempo: minuti a disposizione, 0 = disattivata.
+  int timeLimit = 0;
+
+  /// Limite di mosse: extra sul percorso minimo (N), -1 = nessun limite.
+  int moveLimit = -1;
+
+  /// Percorso obbligato: la partita assegna un film/attore da cui passare.
+  bool mustPass = false;
+
+  /// Filtri: id dei generi TMDB e decenni (es. 1990) ammessi; vuoti = nessun filtro.
+  Set<int> genreFilter = {}, decadeFilter = {};
   String lang = 'it-IT';
 
   /// Nomi delle [Region] escluse (es. 'southAsia', 'eastAsia').
@@ -109,6 +124,12 @@ class AppSettings extends ChangeNotifier {
     style = KinoStyle.values.firstWhere((s) => s.name == p.getString('style'), orElse: () => KinoStyle.metro);
     appearance = Appearance.values.firstWhere((a) => a.name == p.getString('appearance'), orElse: () => Appearance.system);
     noSeries = p.getBool('noSeries') ?? false;
+    mediaMode = p.getString('mediaMode') ?? 'movie';
+    timeLimit = p.getInt('timeLimit') ?? 0;
+    moveLimit = p.getInt('moveLimit') ?? -1;
+    mustPass = p.getBool('mustPass') ?? false;
+    genreFilter = {for (final x in p.getStringList('genreFilter') ?? const <String>[]) int.parse(x)};
+    decadeFilter = {for (final x in p.getStringList('decadeFilter') ?? const <String>[]) int.parse(x)};
     lang = p.getString('lang') ?? 'it-IT';
     tmdbToken = p.getString('tmdbToken') ?? '';
     excludedRegions = (p.getStringList('excludedRegions') ?? const <String>[]).toSet();
@@ -118,6 +139,12 @@ class AppSettings extends ChangeNotifier {
     KinoStyle? style,
     Appearance? appearance,
     bool? noSeries,
+    String? mediaMode,
+    int? timeLimit,
+    int? moveLimit,
+    bool? mustPass,
+    Set<int>? genreFilter,
+    Set<int>? decadeFilter,
     String? lang,
     String? tmdbToken,
     Set<String>? excludedRegions,
@@ -125,6 +152,12 @@ class AppSettings extends ChangeNotifier {
     this.style = style ?? this.style;
     this.appearance = appearance ?? this.appearance;
     this.noSeries = noSeries ?? this.noSeries;
+    this.mediaMode = mediaMode ?? this.mediaMode;
+    this.timeLimit = timeLimit ?? this.timeLimit;
+    this.moveLimit = moveLimit ?? this.moveLimit;
+    this.mustPass = mustPass ?? this.mustPass;
+    this.genreFilter = genreFilter ?? this.genreFilter;
+    this.decadeFilter = decadeFilter ?? this.decadeFilter;
     this.lang = lang ?? this.lang;
     this.tmdbToken = tmdbToken ?? this.tmdbToken;
     this.excludedRegions = excludedRegions ?? this.excludedRegions;
@@ -132,6 +165,12 @@ class AppSettings extends ChangeNotifier {
     await p.setString('style', this.style.name);
     await p.setString('appearance', this.appearance.name);
     await p.setBool('noSeries', this.noSeries);
+    await p.setString('mediaMode', this.mediaMode);
+    await p.setInt('timeLimit', this.timeLimit);
+    await p.setInt('moveLimit', this.moveLimit);
+    await p.setBool('mustPass', this.mustPass);
+    await p.setStringList('genreFilter', [for (final x in this.genreFilter) '$x']);
+    await p.setStringList('decadeFilter', [for (final x in this.decadeFilter) '$x']);
     await p.setString('lang', this.lang);
     await p.setString('tmdbToken', this.tmdbToken);
     await p.setStringList('excludedRegions', this.excludedRegions.toList());

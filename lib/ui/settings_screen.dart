@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../data/filters.dart';
 import '../data/regions.dart';
 import '../main.dart';
 import 'style_picker.dart';
@@ -16,11 +17,82 @@ class SettingsScreen extends StatelessWidget {
             const _Header('Aspetto'),
             const AppearancePicker(),
             const _Header('Partita'),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              child: SegmentedButton<String>(
+                segments: const [
+                  ButtonSegment(value: 'movie', label: Text('Film')),
+                  ButtonSegment(value: 'tv', label: Text('Serie')),
+                  ButtonSegment(value: 'both', label: Text('Entrambi')),
+                ],
+                selected: {settings.mediaMode},
+                onSelectionChanged: (s) => settings.update(mediaMode: s.first),
+              ),
+            ),
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 12, 16, 4),
+              child: Text('Tempo a disposizione'),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              child: SegmentedButton<int>(
+                segments: const [
+                  ButtonSegment(value: 0, label: Text('Nessuno')),
+                  ButtonSegment(value: 2, label: Text('2 min')),
+                  ButtonSegment(value: 3, label: Text('3 min')),
+                  ButtonSegment(value: 5, label: Text('5 min')),
+                ],
+                selected: {settings.timeLimit},
+                onSelectionChanged: (v) => settings.update(timeLimit: v.first),
+              ),
+            ),
+            SwitchListTile(
+              title: const Text('Percorso obbligato'),
+              subtitle: const Text('Un film o un attore assegnato da cui il collegamento deve passare'),
+              value: settings.mustPass,
+              onChanged: (v) => settings.update(mustPass: v),
+            ),
             SwitchListTile(
               title: const Text('Vieta film della stessa serie'),
               subtitle: const Text('Non ancora implementato'),
               value: settings.noSeries,
               onChanged: (v) => settings.update(noSeries: v),
+            ),
+            const _Header(
+              'Decenni e generi',
+              subtitle: 'Limita film e serie ai decenni e ai generi scelti (nessuna scelta = nessun limite). '
+                  'Vale per suggerimenti e collegamenti.',
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Wrap(spacing: 8, runSpacing: 4, children: [
+                for (final d in kDecades)
+                  FilterChip(
+                    label: Text('${d}s'),
+                    selected: settings.decadeFilter.contains(d),
+                    onSelected: (on) {
+                      final x = {...settings.decadeFilter};
+                      on ? x.add(d) : x.remove(d);
+                      settings.update(decadeFilter: x);
+                    },
+                  ),
+              ]),
+            ),
+            const SizedBox(height: 8),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Wrap(spacing: 8, runSpacing: 4, children: [
+                for (final g in kGenres.entries)
+                  FilterChip(
+                    label: Text(g.value),
+                    selected: settings.genreFilter.contains(g.key),
+                    onSelected: (on) {
+                      final x = {...settings.genreFilter};
+                      on ? x.add(g.key) : x.remove(g.key);
+                      settings.update(genreFilter: x);
+                    },
+                  ),
+              ]),
             ),
             const _Header(
               'Cinematografie da escludere',

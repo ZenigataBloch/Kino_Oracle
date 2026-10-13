@@ -1,7 +1,11 @@
+import 'dart:convert';
+import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../data/data_source.dart';
 import '../data/tmdb.dart';
 import '../game/board_state.dart';
+import '../game/waypoint.dart';
 import '../main.dart';
 import '../models/models.dart';
 import '../theme/kino_look.dart';
@@ -26,11 +30,15 @@ class _HomeScreenState extends State<HomeScreen> {
   /// Firma delle impostazioni che influenzano i dati: se cambia, si ricrea la sorgente.
   static String _signature() {
     final langs = settings.excludedLanguages.toList()..sort();
-    return '${settings.lang}|${settings.tmdbKey}|${langs.join(',')}';
+    return '${settings.lang}|${settings.tmdbKey}|${langs.join(',')}|${settings.mediaMode}|${(settings.genreFilter.toList()..sort()).join(',')}|${(settings.decadeFilter.toList()..sort()).join(',')}';
   }
 
   DataSource _makeData() =>
-      Tmdb(settings.lang, settings.tmdbKey, excludedLanguages: settings.excludedLanguages);
+      Tmdb(settings.lang, settings.tmdbKey,
+          excludedLanguages: settings.excludedLanguages,
+          mediaMode: settings.mediaMode,
+          genres: settings.genreFilter,
+          decades: settings.decadeFilter);
 
   /// Ricrea la sorgente solo se lingua, chiave o filtri sono cambiati (cosi la cache resta).
   void _syncData() {
@@ -88,14 +96,101 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   /// Quando si torna da una partita ("Nuova partita") i valori precedenti si azzerano.
-  Future<void> _play() async {
-    final game = BoardState(picks[0]!, picks[1]!, data);
+  Future<void> _play({bool daily = false, bool duel = false}) async {
+    Waypoint? must;
+    if (settings.mustPass) {
+      final wasBusy = _dailyBusy;
+      setState(() => _dailyBusy = true);
+      try {
+        final n = DateTime.now().toUtc();
+        must = await pickWaypoint(data, picks[0]!, picks[1]!,
+            rnd: daily ? Random(n.year * 10000 + n.month * 100 + n.day + 1) : null);
+      } catch (_) {}
+      if (mounted) setState(() => _dailyBusy = wasBusy);
+      if (!mounted) return;
+      if (must == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Nessun passaggio obbligato trovato: riprova o cambia coppia')),
+        );
+        return;
+      }
+      final w = must;
+      await showDialog<void>(
+        context: context,
+        builder: (c) => AlertDialog(
+          title: const Text('Percorso obbligato'),
+          content: Text('Devi passare da ${w.kind}: ${w.label}'),
+          actions: [TextButton(onPressed: () => Navigator.pop(c), child: const Text('OK'))],
+        ),
+      );
+      if (!mounted) return;
+    }
+    final game = BoardState(picks[0]!, picks[1]!, data)
+      ..daily = daily
+      ..duel = duel
+      ..must = must;
+    // Nel duello niente limiti di mosse o di tempo: contano i turni.
+    if (!duel && settings.moveLimit >= 0) game.extraAllowed = settings.moveLimit;
+    if (!duel && settings.timeLimit > 0) game.startTimer(Duration(minutes: settings.timeLimit));
     final done = await Navigator.push<bool>(
       context,
       MaterialPageRoute<bool>(builder: (_) => BoardScreen(game)),
     );
+    if (daily && game.solved) {
+      final p = await SharedPreferences.getInstance();
+      if (p.getString('dailyDone') != _today) await p.setString('dailyDone', _today);
+    }
     // Partita finita (anche se si esce con "indietro") o "Nuova partita": scelta azzerata.
     if ((done == true || game.solved) && mounted) _reset();
+  }
+
+  // ---- Sfida giornaliera: stessa coppia per tutti, seme = data (UTC) ----------
+  bool _dailyBusy = false;
+
+  static String get _today {
+    final n = DateTime.now().toUtc();
+    return '${n.year}-${n.month.toString().padLeft(2, '0')}-${n.day.toString().padLeft(2, '0')}';
+  }
+
+  Future<void> _daily() async {
+    setState(() => _dailyBusy = true);
+    try {
+      final now = DateTime.now().toUtc();
+      final prefs = await SharedPreferences.getInstance();
+      List<Person>? pair;
+      final raw = prefs.getString('dailyPair');
+      if (prefs.getString('dailyDate') == _today && raw != null) {
+        pair = [for (final j in jsonDecode(raw) as List) Person(j['id'], j['name'], j['photo'], null)];
+      }
+      if (pair == null) {
+        final rnd = Random(now.year * 10000 + now.month * 100 + now.day);
+        final a = await data.randomPerson(rnd: rnd);
+        Person? b;
+        for (var k = 0; k < 8 && b == null; k++) {
+          final c = await data.randomPerson(rnd: rnd);
+          if (c != null && c.id != a?.id) b = c;
+        }
+        if (a == null || b == null) throw Exception('nessun attore');
+        pair = [a, b];
+        await prefs.setString('dailyDate', _today);
+        await prefs.setString('dailyPair', jsonEncode([for (final p in pair) {'id': p.id, 'name': p.name, 'photo': p.photoUrl}]));
+      }
+      if (!mounted) return;
+      final fixed = pair;
+      setState(() {
+        picks[0] = fixed[0];
+        picks[1] = fixed[1];
+        _keys[0] = UniqueKey();
+        _keys[1] = UniqueKey();
+      });
+      await _play(daily: true);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Sfida non disponibile, riprova')));
+      }
+    } finally {
+      if (mounted) setState(() => _dailyBusy = false);
+    }
   }
 
   // Si ricostruisce quando cambiano le impostazioni (anche la chiave TMDB).
@@ -150,12 +245,38 @@ class _HomeScreenState extends State<HomeScreen> {
               icon: const Icon(Icons.swap_horiz),
               label: const Text('Scambia gli attori'),
             ),
+            const SizedBox(height: 8),
+            const Text('Limite di mosse (minimo + N)'),
+            const SizedBox(height: 6),
+            SegmentedButton<int>(
+              showSelectedIcon: false,
+              segments: const [
+                ButtonSegment(value: -1, label: Text('Libero')),
+                ButtonSegment(value: 0, label: Text('+0')),
+                ButtonSegment(value: 2, label: Text('+2')),
+                ButtonSegment(value: 4, label: Text('+4')),
+              ],
+              selected: {settings.moveLimit},
+              onSelectionChanged: (v) => settings.update(moveLimit: v.first),
+            ),
             const SizedBox(height: 16),
             FilledButton.icon(
               style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 16)),
-              onPressed: ready ? _play : null,
+              onPressed: ready && !_dailyBusy ? _play : null,
               icon: const Icon(Icons.play_arrow_rounded),
               label: const Text('GIOCA', style: TextStyle(fontSize: 16, letterSpacing: 2, fontWeight: FontWeight.w800)),
+            ),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: ready && !_dailyBusy ? () => _play(duel: true) : null,
+              icon: const Icon(Icons.people),
+              label: const Text('DUELLO A TURNI'),
+            ),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: settings.hasKey && !_dailyBusy ? _daily : null,
+              icon: const Icon(Icons.today),
+              label: const Text('SFIDA DEL GIORNO'),
             ),
           ]),
         ),

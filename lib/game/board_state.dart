@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:math';
 import 'dart:ui';
 import 'package:flutter/foundation.dart';
 import '../data/data_source.dart';
 import '../models/models.dart';
+import 'waypoint.dart';
 import 'solver.dart';
 
 class MapLayout {
@@ -23,6 +25,84 @@ class BoardState extends ChangeNotifier {
   final movies = <int, Movie>{};
   final links = <(int, int)>{}; // (personId, movieId)
   bool busy = false, solved = false;
+  bool daily = false; // partita della sfida giornaliera
+
+  // Duello a turni (2 giocatori sullo stesso telefono): dopo ogni mossa valida il turno passa;
+  // vince chi chiude il collegamento.
+  bool duel = false;
+  int turn = 0; // 0 = Giocatore 1, 1 = Giocatore 2
+  int? winner;
+
+  String? get duelNote => duel && winner == null ? 'Turno del Giocatore ${turn + 1}' : null;
+
+  // Percorso obbligato: la vittoria vale solo se il collegamento A-B passa da [must].
+  Waypoint? must;
+
+  String? get mustNote => must == null ? null : 'Devi passare da ${must!.kind}: ${must!.label}';
+
+  bool get _mustOk {
+    final k = must?.key;
+    return k == null || (_bfs('p${a.id}').containsKey(k) && _bfs('p${b.id}').containsKey(k));
+  }
+
+  // Limite di mosse: si può collegare con al massimo "percorso minimo + extraAllowed" mosse.
+  // Senza minimo noto (in calcolo, non disponibile o "almeno 5") non c'è limite.
+  int? extraAllowed;
+  bool outOfMoves = false;
+
+  int? get maxMoves {
+    final e = extraAllowed, o = optimal;
+    if (e == null || !optimalReady || o == null || o == 0) return null;
+    return o + e;
+  }
+
+  /// Mosse rimaste; null se non c'è limite.
+  int? get movesLeft {
+    final m = maxMoves;
+    return m == null ? null : max(0, m - moves);
+  }
+
+  /// Partita persa per tempo o per mosse esaurite.
+  bool get lost => timedOut || outOfMoves;
+
+  void _checkLimit() {
+    final m = maxMoves;
+    if (solved || outOfMoves || m == null || moves < m) return;
+    outOfMoves = true;
+    finishedAt ??= DateTime.now();
+    message = 'Mosse finite!';
+  }
+
+  // Modalità a tempo: se timeLimit è impostato, allo scadere la partita finisce (persa).
+  Duration? timeLimit;
+  bool timedOut = false;
+  Timer? _timer;
+
+  /// Tempo rimasto; null se la partita non è a tempo.
+  Duration? get timeLeft {
+    final l = timeLimit;
+    if (l == null) return null;
+    final r = l - elapsed;
+    return r.isNegative ? Duration.zero : r;
+  }
+
+  /// Avvia il conto alla rovescia (da chiamare subito dopo la creazione).
+  void startTimer(Duration limit) {
+    timeLimit = limit;
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (solved || timedOut || _closed) {
+        _timer?.cancel();
+        return;
+      }
+      if (elapsed >= limit) {
+        timedOut = true;
+        finishedAt ??= DateTime.now();
+        message = 'Tempo scaduto!';
+        _timer?.cancel();
+      }
+      notifyListeners();
+    });
+  }
   String? message;
 
   // Percorso minimo: 1 o 3; null = almeno 5; 0 = non disponibile
@@ -45,6 +125,7 @@ class BoardState extends ChangeNotifier {
     if (_closed) return;
     optimal = r;
     optimalReady = true;
+    _checkLimit();
     notifyListeners();
   }
 
@@ -76,6 +157,7 @@ class BoardState extends ChangeNotifier {
 
   /// Giudizio finale con stelle, da mostrare a partita risolta.
   String get verdict {
+    if (duel && winner != null) return 'Vince il Giocatore ${winner! + 1}! Collegati in $moves mosse.';
     if (!optimalReady) return 'Collegati in $moves mosse! (calcolo il percorso minimo…)';
     final st = stars;
     if (st == 0) return 'Collegati in $moves mosse!';
@@ -86,6 +168,7 @@ class BoardState extends ChangeNotifier {
   @override
   void dispose() {
     _closed = true;
+    _timer?.cancel();
     super.dispose();
   }
 
@@ -141,6 +224,8 @@ class BoardState extends ChangeNotifier {
   }
 
   Future<void> _run(Future<void> Function() f) async {
+    if (timedOut || outOfMoves) return;
+    final before = moves;
     busy = true;
     message = null;
     notifyListeners();
@@ -149,8 +234,18 @@ class BoardState extends ChangeNotifier {
     } catch (e) {
       message = 'Errore di rete: $e';
     }
-    solved = _bfs('p${a.id}').containsKey('p${b.id}');
+    final connected = _bfs('p${a.id}').containsKey('p${b.id}');
+    solved = !timedOut && connected && _mustOk;
+    if (duel) {
+      if (solved) {
+        winner = turn;
+      } else if (moves > before) {
+        turn = 1 - turn;
+      }
+    }
+    if (connected && !solved && !timedOut) message ??= 'Collegati, ma manca il passaggio obbligato: ${must!.label}';
     if (solved) finishedAt ??= DateTime.now();
+    _checkLimit();
     busy = false;
     notifyListeners();
   }

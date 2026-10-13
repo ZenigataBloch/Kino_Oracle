@@ -176,6 +176,12 @@ class _BoardScreenState extends State<BoardScreen> {
                   TextButton(onPressed: _newGame, child: const Text('Nuova partita')),
                 ],
               ),
+            if (s.lost && !s.solved)
+              MaterialBanner(
+                content: Text(s.timedOut ? 'Tempo scaduto: partita persa.' : 'Mosse finite: partita persa.'),
+                actions: [TextButton(onPressed: _newGame, child: const Text('Nuova partita'))],
+              ),
+            _status(spec),
             Expanded(child: _map(spec)),
             if (s.message != null)
               Container(
@@ -207,6 +213,34 @@ class _BoardScreenState extends State<BoardScreen> {
             ),
         ]),
       ),
+    );
+  }
+
+  static String _fmt(Duration d) =>
+      '${d.inMinutes}:${(d.inSeconds % 60).toString().padLeft(2, '0')}';
+
+  /// Barra di stato: turno (duello), passaggio obbligato, tempo e mosse rimaste.
+  Widget _status(StyleSpec spec) {
+    final items = <(IconData, String)>[
+      if (s.duelNote != null) (Icons.people, s.duelNote!),
+      if (s.mustNote != null) (Icons.flag, s.mustNote!),
+      if (s.timeLeft != null) (Icons.timer, _fmt(s.timeLeft!)),
+      if (s.movesLeft != null) (Icons.directions_walk, 'Mosse rimaste: ${s.movesLeft}'),
+    ];
+    if (items.isEmpty || s.solved) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
+      child: Wrap(spacing: 8, runSpacing: 4, children: [
+        for (final (icon, text) in items)
+          Chip(
+            avatar: Icon(icon, size: 18, color: spec.accent),
+            label: Text(text),
+            visualDensity: VisualDensity.compact,
+            backgroundColor: spec.surface,
+            side: BorderSide(color: spec.ink.withValues(alpha: .2)),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(spec.radius)),
+          ),
+      ]),
     );
   }
 
@@ -295,7 +329,7 @@ class _BoardScreenState extends State<BoardScreen> {
             return TextField(
               controller: ctl,
               focusNode: focus,
-              enabled: !s.busy && !s.solved,
+              enabled: !s.busy && !s.solved && !s.lost,
               onSubmitted: (_) => _hasOptions ? submit() : _addText(),
               decoration: const InputDecoration(
                 hintText: 'Film o attore collegato a qualcosa sul tavolo…',
@@ -343,7 +377,7 @@ class _BoardScreenState extends State<BoardScreen> {
       const SizedBox(width: 8),
       IconButton.filled(
         tooltip: 'Aggiungi il testo digitato',
-        onPressed: s.busy || s.solved ? null : _addText,
+        onPressed: s.busy || s.solved || s.lost ? null : _addText,
         icon: s.busy
             ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
             : const Icon(Icons.add),

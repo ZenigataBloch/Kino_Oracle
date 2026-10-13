@@ -288,8 +288,38 @@ class MovieNode extends StatelessWidget {
 
   double get _tilt => ((movie.id % 5) - 2) * .018;
 
+  IconData get _icon => movie.isTv ? Icons.tv : Icons.movie;
+
+  /// Le serie hanno un bollino "TV" nell'angolo, nel look dello stile.
   Widget _poster() {
-    final img = NodeImage(url: movie.posterUrl, fallback: Icons.movie, color: spec.ink);
+    final base = _posterBase();
+    if (!movie.isTv) return base;
+    final Widget badge = switch (spec.label) {
+      'Bacheca' => Transform.rotate(
+          angle: .12,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            color: _tape,
+            child: const Text('SERIE', style: TextStyle(color: _paperInk, fontSize: 10, fontWeight: FontWeight.w900)),
+          ),
+        ),
+      'Cinema' => Container(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          decoration: BoxDecoration(color: _film, border: Border.all(color: color, width: 1.5)),
+          child: const Text('TV', style: TextStyle(color: _sprocket, fontSize: 11, fontWeight: FontWeight.w900)),
+        ),
+      _ => Container(
+          width: 26,
+          height: 26,
+          decoration: BoxDecoration(shape: BoxShape.circle, color: spec.ink, border: Border.all(color: color, width: 2)),
+          child: Icon(Icons.tv, size: 15, color: spec.bg),
+        ),
+    };
+    return Stack(clipBehavior: Clip.none, children: [base, Positioned(top: -8, right: -10, child: badge)]);
+  }
+
+  Widget _posterBase() {
+    final img = NodeImage(url: movie.posterUrl, fallback: _icon, color: spec.ink);
     switch (spec.label) {
       case 'Bacheca':
         return Transform.rotate(
@@ -300,7 +330,7 @@ class MovieNode extends StatelessWidget {
               height: posterH,
               padding: const EdgeInsets.fromLTRB(5, 5, 5, 16),
               decoration: BoxDecoration(color: _paper, borderRadius: BorderRadius.circular(2), boxShadow: _shadow),
-              child: NodeImage(url: movie.posterUrl, fallback: Icons.movie, color: _paperInk),
+              child: NodeImage(url: movie.posterUrl, fallback: _icon, color: _paperInk),
             ),
             Positioned(top: -7, child: _Pin(spec.accent)),
           ]),
