@@ -13,6 +13,9 @@ abstract class DataSource {
   Future<Movie?> movieById(int id);
   Future<Person?> personById(int id);
 
+  /// Id della collezione/saga di un film (null se non ne fa parte o non disponibile).
+  Future<int?> movieCollectionId(int movieId) async => null;
+
   /// Un attore a caso per "Scegli per me" (null se non ne trova uno).
   /// Con [rnd] con seme fisso la scelta è ripetibile (sfida giornaliera).
   Future<Person?> randomPerson({Random? rnd});

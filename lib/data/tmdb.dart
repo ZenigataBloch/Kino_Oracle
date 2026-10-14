@@ -154,6 +154,15 @@ class Tmdb implements DataSource {
         m['poster_path'] == null ? null : 'https://image.tmdb.org/t/p/w342${m['poster_path']}', tv ? 'tv' : 'movie');
   }
 
+  final _collections = <int, int?>{};
+
+  @override
+  Future<int?> movieCollectionId(int movieId) async {
+    if (_collections.containsKey(movieId)) return _collections[movieId];
+    final m = await _get('/movie/$movieId');
+    return _collections[movieId] = (m['belongs_to_collection'] as Map?)?['id'] as int?;
+  }
+
   @override
   Future<Person?> personById(int id) async => _toPerson(await _get('/person/$id'));
 }

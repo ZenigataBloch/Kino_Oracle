@@ -4,6 +4,7 @@ import 'dart:ui';
 import 'package:flutter/foundation.dart';
 import '../data/data_source.dart';
 import '../models/models.dart';
+import 'saga_rule.dart';
 import 'waypoint.dart';
 import 'solver.dart';
 
@@ -187,13 +188,20 @@ class BoardState extends ChangeNotifier {
           message = '${m.title} e gia sul tavolo';
           return;
         }
+        final clash = await SagaRule.conflict(data, m, movies.values);
+        if (clash != null) {
+          message = clash;
+          return;
+        }
         if (!await _linkMovie(m)) message = 'Nessuno degli attori sul tavolo ha recitato in "${m.title}"';
       });
 
   /// Testo libero: prova prima come film, poi come attore.
   Future<void> addByText(String query) => _run(() async {
         for (final m in (await data.searchMovies(query)).take(5)) {
-          if (!movies.containsKey(m.id) && await _linkMovie(m)) return;
+          if (!movies.containsKey(m.id) &&
+              await SagaRule.conflict(data, m, movies.values) == null &&
+              await _linkMovie(m)) return;
         }
         for (final p in (await data.searchPeople(query)).take(5)) {
           if (!people.containsKey(p.id) && await _linkPerson(p)) return;

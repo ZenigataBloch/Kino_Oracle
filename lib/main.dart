@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'theme/kino_look.dart';
 import 'theme/kino_theme.dart';
+import 'game/media_pick.dart';
+import 'game/saga_rule.dart';
 import 'ui/home_screen.dart';
 
 final settings = AppSettings();
@@ -11,6 +13,8 @@ void main() async {
   // Edge-to-edge esplicito: gli insets li gestiamo noi nel builder del MaterialApp.
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   await settings.load();
+  await SagaRule.load();
+  await MediaPick.load();
   runApp(const KinoApp());
 }
 

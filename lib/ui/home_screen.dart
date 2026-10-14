@@ -5,6 +5,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../data/data_source.dart';
 import '../data/tmdb.dart';
 import '../game/board_state.dart';
+import '../game/daily.dart';
+import '../game/media_pick.dart';
+import '../game/saga_rule.dart';
 import '../game/waypoint.dart';
 import '../main.dart';
 import '../models/models.dart';
@@ -30,13 +33,13 @@ class _HomeScreenState extends State<HomeScreen> {
   /// Firma delle impostazioni che influenzano i dati: se cambia, si ricrea la sorgente.
   static String _signature() {
     final langs = settings.excludedLanguages.toList()..sort();
-    return '${settings.lang}|${settings.tmdbKey}|${langs.join(',')}|${settings.mediaMode}|${(settings.genreFilter.toList()..sort()).join(',')}|${(settings.decadeFilter.toList()..sort()).join(',')}';
+    return '${settings.lang}|${settings.tmdbKey}|${langs.join(',')}|${MediaPick.mode}|${(settings.genreFilter.toList()..sort()).join(',')}|${(settings.decadeFilter.toList()..sort()).join(',')}';
   }
 
   DataSource _makeData() =>
       Tmdb(settings.lang, settings.tmdbKey,
           excludedLanguages: settings.excludedLanguages,
-          mediaMode: settings.mediaMode,
+          mediaMode: MediaPick.mode,
           genres: settings.genreFilter,
           decades: settings.decadeFilter);
 
@@ -51,6 +54,9 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    Daily.load().then((_) {
+      if (mounted) setState(() {});
+    });
     // Su Android propone di scaricare l'APK se su GitHub c'e una versione piu nuova.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) Updater.check(context);
@@ -96,7 +102,8 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   /// Quando si torna da una partita ("Nuova partita") i valori precedenti si azzerano.
-  Future<void> _play({bool daily = false, bool duel = false}) async {
+  Future<void> _play({bool daily = false, bool duel = false, DataSource? src}) async {
+    final data = src ?? this.data;
     Waypoint? must;
     if (settings.mustPass) {
       final wasBusy = _dailyBusy;
@@ -137,8 +144,8 @@ class _HomeScreenState extends State<HomeScreen> {
       MaterialPageRoute<bool>(builder: (_) => BoardScreen(game)),
     );
     if (daily && game.solved) {
-      final p = await SharedPreferences.getInstance();
-      if (p.getString('dailyDone') != _today) await p.setString('dailyDone', _today);
+      await Daily.markSolved();
+      if (mounted) setState(() {});
     }
     // Partita finita (anche se si esce con "indietro") o "Nuova partita": scelta azzerata.
     if ((done == true || game.solved) && mounted) _reset();
@@ -147,13 +154,12 @@ class _HomeScreenState extends State<HomeScreen> {
   // ---- Sfida giornaliera: stessa coppia per tutti, seme = data (UTC) ----------
   bool _dailyBusy = false;
 
-  static String get _today {
-    final n = DateTime.now().toUtc();
-    return '${n.year}-${n.month.toString().padLeft(2, '0')}-${n.day.toString().padLeft(2, '0')}';
-  }
+  static String get _today => Daily.today;
 
   Future<void> _daily() async {
     setState(() => _dailyBusy = true);
+    // Coppia uguale per tutti: sorgente standard (solo film, nessun filtro).
+    final std = Tmdb(settings.lang, settings.tmdbKey);
     try {
       final now = DateTime.now().toUtc();
       final prefs = await SharedPreferences.getInstance();
@@ -164,10 +170,10 @@ class _HomeScreenState extends State<HomeScreen> {
       }
       if (pair == null) {
         final rnd = Random(now.year * 10000 + now.month * 100 + now.day);
-        final a = await data.randomPerson(rnd: rnd);
+        final a = await std.randomPerson(rnd: rnd);
         Person? b;
         for (var k = 0; k < 8 && b == null; k++) {
-          final c = await data.randomPerson(rnd: rnd);
+          final c = await std.randomPerson(rnd: rnd);
           if (c != null && c.id != a?.id) b = c;
         }
         if (a == null || b == null) throw Exception('nessun attore');
@@ -183,7 +189,7 @@ class _HomeScreenState extends State<HomeScreen> {
         _keys[0] = UniqueKey();
         _keys[1] = UniqueKey();
       });
-      await _play(daily: true);
+      await _play(daily: true, src: std);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Sfida non disponibile, riprova')));
@@ -259,6 +265,32 @@ class _HomeScreenState extends State<HomeScreen> {
               selected: {settings.moveLimit},
               onSelectionChanged: (v) => settings.update(moveLimit: v.first),
             ),
+            const SizedBox(height: 8),
+            const Text('Cosa usare per i collegamenti'),
+            const SizedBox(height: 6),
+            SegmentedButton<String>(
+              showSelectedIcon: false,
+              segments: const [
+                ButtonSegment(value: 'movie', label: Text('Film'), icon: Icon(Icons.movie)),
+                ButtonSegment(value: 'tv', label: Text('Serie TV'), icon: Icon(Icons.tv)),
+                ButtonSegment(value: 'both', label: Text('Entrambi')),
+              ],
+              selected: {MediaPick.mode},
+              onSelectionChanged: (v) async {
+                await MediaPick.set(v.first);
+                if (mounted) setState(() {});
+              },
+            ),
+            const SizedBox(height: 8),
+            FilterChip(
+              avatar: const Icon(Icons.block, size: 18),
+              label: const Text('Niente film della stessa saga'),
+              selected: SagaRule.enabled,
+              onSelected: (v) async {
+                await SagaRule.set(v);
+                if (mounted) setState(() {});
+              },
+            ),
             const SizedBox(height: 16),
             FilledButton.icon(
               style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 16)),
@@ -276,7 +308,7 @@ class _HomeScreenState extends State<HomeScreen> {
             OutlinedButton.icon(
               onPressed: settings.hasKey && !_dailyBusy ? _daily : null,
               icon: const Icon(Icons.today),
-              label: const Text('SFIDA DEL GIORNO'),
+              label: Text(Daily.label),
             ),
           ]),
         ),
