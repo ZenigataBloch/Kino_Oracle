@@ -2,7 +2,9 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:open_filex/open_filex.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 /// Controlla l'ultima release su GitHub e propone di scaricare l'APK se e piu nuova.
@@ -52,11 +54,69 @@ class Updater {
           ],
         ),
       );
-      if (go == true) await launchUrl(Uri.parse(apk), mode: LaunchMode.externalApplication);
+      if (go == true && context.mounted) {
+        final ok = await _downloadAndInstall(context, apk);
+        // Se il download in app fallisce, ripiega sul browser.
+        if (!ok) await launchUrl(Uri.parse(apk), mode: LaunchMode.externalApplication);
+      }
     } catch (_) {
       // Niente rete o GitHub non raggiungibile: si gioca e basta.
     } finally {
       client.close();
+    }
+  }
+
+  /// Scarica l'APK con una barra di avanzamento e apre l'installazione di Android.
+  static Future<bool> _downloadAndInstall(BuildContext context, String url) async {
+    final progress = ValueNotifier<double?>(null);
+    var dialogOpen = true;
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => PopScope(
+        canPop: false,
+        child: AlertDialog(
+          title: const Text('Scarico l\'aggiornamento…'),
+          content: ValueListenableBuilder<double?>(
+            valueListenable: progress,
+            builder: (_, v, __) => Column(mainAxisSize: MainAxisSize.min, children: [
+              LinearProgressIndicator(value: v),
+              const SizedBox(height: 8),
+              Text(v == null ? '' : '${(v * 100).round()}%'),
+            ]),
+          ),
+        ),
+      ),
+    );
+    void close() {
+      if (dialogOpen && context.mounted) Navigator.of(context, rootNavigator: true).pop();
+      dialogOpen = false;
+    }
+
+    final client = HttpClient()..connectionTimeout = const Duration(seconds: 15);
+    try {
+      final dir = await getTemporaryDirectory();
+      final file = File('${dir.path}/kino_oracle_update.apk');
+      final res = await (await client.getUrl(Uri.parse(url))).close();
+      if (res.statusCode != 200) throw Exception('HTTP ${res.statusCode}');
+      final total = res.contentLength;
+      var got = 0;
+      final sink = file.openWrite();
+      await for (final chunk in res) {
+        sink.add(chunk);
+        got += chunk.length;
+        if (total > 0) progress.value = got / total;
+      }
+      await sink.close();
+      close();
+      final r = await OpenFilex.open(file.path, type: 'application/vnd.android.package-archive');
+      return r.type == ResultType.done;
+    } catch (_) {
+      close();
+      return false;
+    } finally {
+      client.close();
+      progress.dispose();
     }
   }
 

@@ -37,6 +37,9 @@ jobs:
 
       - run: flutter pub get
 
+      # Genera le icone (ciak dorato) da assets/icon/ direttamente nella build.
+      - run: dart run flutter_launcher_icons
+
       # La versione viene dal tag (v1.0.2 -> 1.0.2); il numero di build sale a ogni esecuzione.
       - name: Compila l'APK
         run: |

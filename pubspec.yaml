@@ -8,6 +8,8 @@ dependencies:
   flutter:
     sdk: flutter
   http: ^1.2.0
+  open_filex: ^4.7.0
+  path_provider: ^2.1.0
   package_info_plus: ^10.2.2
   shared_preferences: ^2.2.0
   url_launcher: ^6.3.3
@@ -23,7 +25,7 @@ flutter_launcher_icons:
   android: true
   ios: false
   image_path: "assets/icon/icon.png"
-  adaptive_icon_background: "#E3120B"
+  adaptive_icon_background: "#14100C"
   adaptive_icon_foreground: "assets/icon/icon_foreground.png"
   windows:
     generate: true
