@@ -27,7 +27,7 @@ class _ModeSheetState extends State<_ModeSheet> {
     final accent = Theme.of(context).colorScheme.primary;
     return SafeArea(
       child: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
         child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           Text('SCEGLI LA MODALITÀ',
               textAlign: TextAlign.center,
@@ -41,7 +41,7 @@ class _ModeSheetState extends State<_ModeSheet> {
                 Row(children: [
                   Icon(Icons.movie_filter_rounded, color: accent),
                   const SizedBox(width: 10),
-                  const Text('CLASSICA', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, letterSpacing: 1.2)),
+                  const Text('CLASSICA', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, letterSpacing: 1.2)),
                 ]),
                 const SizedBox(height: 14),
                 const Text('Limite di mosse (minimo + N)'),
@@ -88,10 +88,10 @@ class _ModeSheetState extends State<_ModeSheet> {
                 ),
                 const SizedBox(height: 8),
                 FilledButton.icon(
-                  style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
+                  style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 12)),
                   onPressed: () => Navigator.pop(context, 'classic'),
                   icon: const Icon(Icons.play_arrow_rounded),
-                  label: const Text('INIZIA', style: TextStyle(letterSpacing: 2, fontWeight: FontWeight.w800)),
+                  label: const Text('CONTINUA', style: TextStyle(letterSpacing: 2, fontWeight: FontWeight.w800)),
                 ),
               ]),
             ),

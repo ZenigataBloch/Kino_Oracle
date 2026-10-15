@@ -65,6 +65,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   /// Azzera i due attori scelti (e i relativi campi di testo).
   void _reset() => setState(() {
+        _mode = null;
         picks[0] = null;
         picks[1] = null;
         _keys[0] = UniqueKey();
@@ -153,18 +154,17 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // ---- Sfida giornaliera: stessa coppia per tutti, seme = data (UTC) ----------
   bool _dailyBusy = false;
+  String? _mode; // modalità scelta con GIOCA: dopo di essa si scelgono gli attori
 
   /// GIOCA: sceglie la modalità e avvia la partita.
   Future<void> _openModes() async {
     final m = await showModeSheet(context);
     if (!mounted || m == null) return;
     _syncData(); // le opzioni scelte nel pannello (es. Film/Serie TV) cambiano la sorgente dati
-    if (m == 'classic') {
-      await _play();
-    } else if (m == 'duel') {
-      await _play(duel: true);
-    } else if (m == 'daily') {
-      await _daily();
+    if (m == 'daily') {
+      await _daily(); // la sfida giornaliera ha già la sua coppia di attori
+    } else {
+      setState(() => _mode = m);
     }
   }
 
@@ -243,38 +243,54 @@ class _HomeScreenState extends State<HomeScreen> {
           padding: const EdgeInsets.all(24),
           child: Column(mainAxisSize: MainAxisSize.min, children: [
             Row(mainAxisSize: MainAxisSize.min, children: [
-              Icon(Icons.movie_filter_rounded, size: 40, color: spec.accent),
-              const SizedBox(width: 12),
+              Icon(Icons.movie_filter_rounded, size: 30, color: spec.accent),
+              const SizedBox(width: 10),
               Text('KINO ORACLE',
-                  style: TextStyle(fontSize: 36, fontWeight: FontWeight.w900, letterSpacing: 1.5, color: spec.accent)),
+                  style: TextStyle(fontSize: 26, fontWeight: FontWeight.w900, letterSpacing: 1.5, color: spec.accent)),
             ]),
-            const SizedBox(height: 8),
+            const SizedBox(height: 6),
             Text(
-              'Scegli due attori e collegali attraverso i film',
+              'Collega due attori attraverso i film',
               textAlign: TextAlign.center,
-              style: TextStyle(color: spec.ink.withValues(alpha: .75)),
+              style: TextStyle(fontSize: 13, color: spec.ink.withValues(alpha: .7)),
             ),
             if (!settings.hasKey) _keyBanner(spec),
-            const SizedBox(height: 32),
-            Wrap(spacing: 24, runSpacing: 24, alignment: WrapAlignment.center, children: [
-              for (var i = 0; i < 2; i++) _slot(i),
-            ]),
-            const SizedBox(height: 16),
-            TextButton.icon(
-              onPressed: picks[0] != null || picks[1] != null ? _swap : null,
-              icon: const Icon(Icons.swap_horiz),
-              label: const Text('Scambia gli attori'),
-            ),
             const SizedBox(height: 28),
-            SizedBox(
-              width: 320,
-              child: FilledButton.icon(
-                style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 26)),
-                onPressed: ready && !_dailyBusy ? _openModes : null,
-                icon: const Icon(Icons.play_arrow_rounded, size: 38),
-                label: const Text('GIOCA', style: TextStyle(fontSize: 26, letterSpacing: 4, fontWeight: FontWeight.w900)),
+            if (_mode == null)
+              SizedBox(
+                width: 200,
+                child: FilledButton.icon(
+                  style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16)),
+                  onPressed: settings.hasKey && !_dailyBusy ? _openModes : null,
+                  icon: const Icon(Icons.play_arrow_rounded, size: 26),
+                  label: const Text('GIOCA', style: TextStyle(fontSize: 18, letterSpacing: 3, fontWeight: FontWeight.w800)),
+                ),
+              )
+            else ...[
+              Text(_mode == 'duel' ? 'DUELLO A TURNI · scegli i due attori' : 'CLASSICA · scegli i due attori',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, letterSpacing: 1.2, color: spec.accent)),
+              const SizedBox(height: 14),
+              Wrap(spacing: 20, runSpacing: 16, alignment: WrapAlignment.center, children: [
+                for (var i = 0; i < 2; i++) _slot(i),
+              ]),
+              const SizedBox(height: 8),
+              TextButton.icon(
+                onPressed: picks[0] != null || picks[1] != null ? _swap : null,
+                icon: const Icon(Icons.swap_horiz, size: 18),
+                label: const Text('Scambia gli attori'),
               ),
-            ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: 200,
+                child: FilledButton.icon(
+                  style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
+                  onPressed: ready && !_dailyBusy ? () => _play(duel: _mode == 'duel') : null,
+                  icon: const Icon(Icons.play_arrow_rounded),
+                  label: const Text('AVVIA', style: TextStyle(letterSpacing: 2, fontWeight: FontWeight.w800)),
+                ),
+              ),
+              TextButton(onPressed: () => setState(() => _mode = null), child: const Text('Indietro')),
+            ],
           ]),
         ),
       ),
@@ -305,12 +321,12 @@ class _HomeScreenState extends State<HomeScreen> {
     final p = picks[i];
     final spec = settings.spec;
     return SizedBox(
-      width: 260,
+      width: 200,
       child: Column(children: [
         // Riquadro dell'attore: bordo e ombra con l'accento quando e stato scelto.
         AnimatedContainer(
           duration: const Duration(milliseconds: 200),
-          height: 240,
+          height: 180,
           decoration: BoxDecoration(
             color: spec.surface,
             border: Border.all(color: p != null ? spec.accent : spec.ink.withValues(alpha: .5), width: 3),
@@ -326,10 +342,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 p!.photoUrl!,
                 fit: BoxFit.cover,
                 errorBuilder: (_, __, ___) =>
-                    Center(child: Icon(Icons.person, size: 80, color: spec.ink.withValues(alpha: .3))),
+                    Center(child: Icon(Icons.person, size: 60, color: spec.ink.withValues(alpha: .3))),
               )
             else
-              Center(child: Icon(Icons.person, size: 80, color: spec.ink.withValues(alpha: .3))),
+              Center(child: Icon(Icons.person, size: 60, color: spec.ink.withValues(alpha: .3))),
             if (p != null)
               Positioned(
                 left: 0,
