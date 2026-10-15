@@ -7,7 +7,6 @@ import '../data/tmdb.dart';
 import '../game/board_state.dart';
 import '../game/daily.dart';
 import '../game/media_pick.dart';
-import '../game/saga_rule.dart';
 import '../game/waypoint.dart';
 import '../main.dart';
 import '../models/models.dart';
@@ -16,6 +15,7 @@ import '../theme/kino_theme.dart';
 import '../update/updater.dart';
 import 'board_screen.dart';
 import 'history_screen.dart';
+import 'mode_sheet.dart';
 import 'settings_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -154,6 +154,20 @@ class _HomeScreenState extends State<HomeScreen> {
   // ---- Sfida giornaliera: stessa coppia per tutti, seme = data (UTC) ----------
   bool _dailyBusy = false;
 
+  /// GIOCA: sceglie la modalità e avvia la partita.
+  Future<void> _openModes() async {
+    final m = await showModeSheet(context);
+    if (!mounted || m == null) return;
+    _syncData(); // le opzioni scelte nel pannello (es. Film/Serie TV) cambiano la sorgente dati
+    if (m == 'classic') {
+      await _play();
+    } else if (m == 'duel') {
+      await _play(duel: true);
+    } else if (m == 'daily') {
+      await _daily();
+    }
+  }
+
   static String get _today => Daily.today;
 
   Future<void> _daily() async {
@@ -251,64 +265,15 @@ class _HomeScreenState extends State<HomeScreen> {
               icon: const Icon(Icons.swap_horiz),
               label: const Text('Scambia gli attori'),
             ),
-            const SizedBox(height: 8),
-            const Text('Limite di mosse (minimo + N)'),
-            const SizedBox(height: 6),
-            SegmentedButton<int>(
-              showSelectedIcon: false,
-              segments: const [
-                ButtonSegment(value: -1, label: Text('Libero')),
-                ButtonSegment(value: 0, label: Text('+0')),
-                ButtonSegment(value: 2, label: Text('+2')),
-                ButtonSegment(value: 4, label: Text('+4')),
-              ],
-              selected: {settings.moveLimit},
-              onSelectionChanged: (v) => settings.update(moveLimit: v.first),
-            ),
-            const SizedBox(height: 8),
-            const Text('Cosa usare per i collegamenti'),
-            const SizedBox(height: 6),
-            SegmentedButton<String>(
-              showSelectedIcon: false,
-              segments: const [
-                ButtonSegment(value: 'movie', label: Text('Film'), icon: Icon(Icons.movie)),
-                ButtonSegment(value: 'tv', label: Text('Serie TV'), icon: Icon(Icons.tv)),
-                ButtonSegment(value: 'both', label: Text('Entrambi')),
-              ],
-              selected: {MediaPick.mode},
-              onSelectionChanged: (v) async {
-                await MediaPick.set(v.first);
-                if (mounted) setState(() {});
-              },
-            ),
-            const SizedBox(height: 8),
-            FilterChip(
-              avatar: const Icon(Icons.block, size: 18),
-              label: const Text('Niente film della stessa saga'),
-              selected: SagaRule.enabled,
-              onSelected: (v) async {
-                await SagaRule.set(v);
-                if (mounted) setState(() {});
-              },
-            ),
-            const SizedBox(height: 16),
-            FilledButton.icon(
-              style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 16)),
-              onPressed: ready && !_dailyBusy ? _play : null,
-              icon: const Icon(Icons.play_arrow_rounded),
-              label: const Text('GIOCA', style: TextStyle(fontSize: 16, letterSpacing: 2, fontWeight: FontWeight.w800)),
-            ),
-            const SizedBox(height: 12),
-            OutlinedButton.icon(
-              onPressed: ready && !_dailyBusy ? () => _play(duel: true) : null,
-              icon: const Icon(Icons.people),
-              label: const Text('DUELLO A TURNI'),
-            ),
-            const SizedBox(height: 8),
-            OutlinedButton.icon(
-              onPressed: settings.hasKey && !_dailyBusy ? _daily : null,
-              icon: const Icon(Icons.today),
-              label: Text(Daily.label),
+            const SizedBox(height: 28),
+            SizedBox(
+              width: 320,
+              child: FilledButton.icon(
+                style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 26)),
+                onPressed: ready && !_dailyBusy ? _openModes : null,
+                icon: const Icon(Icons.play_arrow_rounded, size: 38),
+                label: const Text('GIOCA', style: TextStyle(fontSize: 26, letterSpacing: 4, fontWeight: FontWeight.w900)),
+              ),
             ),
           ]),
         ),

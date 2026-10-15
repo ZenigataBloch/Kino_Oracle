@@ -97,20 +97,27 @@ class Tmdb implements DataSource {
     String? yr(dynamic d) => ((d ?? '') as String).length >= 4 ? (d as String).substring(0, 4) : null;
     String? poster(dynamic m) =>
         m['poster_path'] == null ? null : 'https://image.tmdb.org/t/p/w342${m['poster_path']}';
-    final out = <Movie>[];
+    final films = <Movie>[], series = <Movie>[];
     if (_useMovies) {
       final j = await _get('/search/movie', {'query': q});
       for (final m in j['results'] as List) {
-        if (_movieOk(m)) out.add(Movie(m['id'], m['title'], yr(m['release_date']), poster(m)));
+        if (_movieOk(m)) films.add(Movie(m['id'], m['title'], yr(m['release_date']), poster(m)));
       }
     }
     if (_useTv) {
       final j = await _get('/search/tv', {'query': q});
       for (final m in j['results'] as List) {
         if (_tvOk(m)) {
-          out.add(Movie(Movie.tvOffset + (m['id'] as int), m['name'], yr(m['first_air_date']), poster(m), 'tv'));
+          series.add(Movie(Movie.tvOffset + (m['id'] as int), m['name'], yr(m['first_air_date']), poster(m), 'tv'));
         }
       }
+    }
+    // Con "Entrambi" si alternano film e serie: i chiamanti prendono solo i primi 4-5 risultati
+    // e le serie, messe in coda, non venivano mai trovate.
+    final out = <Movie>[];
+    for (var i = 0; i < films.length || i < series.length; i++) {
+      if (i < films.length) out.add(films[i]);
+      if (i < series.length) out.add(series[i]);
     }
     return out;
   }
